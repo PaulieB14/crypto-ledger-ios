@@ -93,6 +93,12 @@ final class CoinCatalog {
         let s = symbol.uppercased()
         return coins.first { $0.symbol == s }?.imageURL
     }
+
+    /// Full coin name for a symbol (falls back to the symbol itself).
+    func name(for symbol: String) -> String {
+        let s = symbol.uppercased()
+        return coins.first { $0.symbol == s }?.name ?? symbol
+    }
 }
 
 /// A searchable list of every coin, with live prices. Powers "add any crypto".

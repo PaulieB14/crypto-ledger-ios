@@ -97,7 +97,14 @@ struct NetWorthView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(s.positions.enumerated()), id: \.element.id) { i, p in
                         if i > 0 { Divider() }
-                        HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
+                        NavigationLink {
+                            HoldingDetailView(position: p,
+                                              name: catalog.name(for: p.assetID),
+                                              imageURL: catalog.imageURL(for: p.assetID))
+                        } label: {
+                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
+                        }
+                        .buttonStyle(.plain)
                     }
                     if s.cashUSD != 0 {
                         Divider()
@@ -290,6 +297,8 @@ private struct HoldingRow: View {
                         .foregroundStyle(unrealized >= 0 ? .green : .red)
                 }
             }
+            Image(systemName: "chevron.right")
+                .font(.caption2).foregroundStyle(.tertiary).padding(.leading, 1)
         }
         .padding(.vertical, 8)
     }
@@ -297,7 +306,7 @@ private struct HoldingRow: View {
 
 // MARK: - Card container
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     let title: String
     var systemImage: String?
     @ViewBuilder let content: Content
