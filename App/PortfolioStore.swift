@@ -18,7 +18,7 @@ final class PortfolioStore {
     }
 
     private var entries: [LedgerEntry] = []
-    private var spot: [String: Decimal] = [:]
+    private let spot: [String: Decimal]
     private let aggregator: SourceAggregator
     private let initialError: String?
 

@@ -40,3 +40,6 @@ Secrets.swift
 *.p12
 *.mobileprovision
 *.certSigningRequest
+
+# local macOS SwiftUI preview harness (run without Xcode) — copied sources, not part of the app
+MacPreview/

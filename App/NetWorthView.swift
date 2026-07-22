@@ -85,7 +85,7 @@ struct NetWorthView: View {
                 }
             }
 
-            Section("Realized gains") {
+            Section {
                 LabeledContent("Short term") {
                     Text(snapshot.realizedShortTermUSD, format: .currency(code: "USD"))
                         .monospacedDigit()
@@ -99,6 +99,8 @@ struct NetWorthView: View {
                         Text(method.displayName).tag(method)
                     }
                 }
+            } header: {
+                Text("Realized gains")
             } footer: {
                 Text("Changing the method moves gains between realized and unrealized. It never changes what you own.")
             }
