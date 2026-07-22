@@ -9,6 +9,7 @@ struct CoinMarket: Identifiable, Hashable, Sendable {
     let name: String      // "Bitcoin"
     let priceUSD: Decimal
     let rank: Int?
+    let imageURL: URL?    // CDN logo (badge-sized)
 }
 
 /// Thin CoinGecko client. Public, free, no key — the top markets by market cap
@@ -38,8 +39,12 @@ enum CoinGecko {
                 if let n = d["current_price"] as? NSNumber {
                     price = Decimal(string: n.stringValue) ?? 0
                 } else { price = 0 }
+                // Prefer the smaller CDN variant for a crisp badge without the weight.
+                let img = (d["image"] as? String)?
+                    .replacingOccurrences(of: "/large/", with: "/small/")
                 return CoinMarket(id: id, symbol: sym.uppercased(), name: name,
-                                  priceUSD: price, rank: d["market_cap_rank"] as? Int)
+                                  priceUSD: price, rank: d["market_cap_rank"] as? Int,
+                                  imageURL: img.flatMap(URL.init(string:)))
             }
         } catch {
             return []
@@ -83,6 +88,11 @@ final class CoinCatalog {
         let s = symbol.uppercased()
         return coins.first { $0.symbol == s }?.priceUSD
     }
+
+    func imageURL(for symbol: String) -> URL? {
+        let s = symbol.uppercased()
+        return coins.first { $0.symbol == s }?.imageURL
+    }
 }
 
 /// A searchable list of every coin, with live prices. Powers "add any crypto".
@@ -100,7 +110,7 @@ struct CoinPickerView: View {
                 dismiss()
             } label: {
                 HStack(spacing: 12) {
-                    AssetBadge(symbol: coin.symbol)
+                    AssetBadge(symbol: coin.symbol, imageURL: coin.imageURL)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(coin.symbol).fontWeight(.semibold)
                         Text(coin.name).font(.caption).foregroundStyle(.secondary)

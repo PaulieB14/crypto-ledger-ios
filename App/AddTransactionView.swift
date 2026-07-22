@@ -69,7 +69,8 @@ struct AddTransactionView: View {
                 }
             } label: {
                 HStack(spacing: 12) {
-                    AssetBadge(symbol: draft.asset.isEmpty ? "?" : draft.asset)
+                    AssetBadge(symbol: draft.asset.isEmpty ? "?" : draft.asset,
+                               imageURL: catalog.imageURL(for: draft.asset))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(draft.asset.isEmpty ? "Choose a coin" : draft.asset)
                             .fontWeight(.medium)
@@ -157,18 +158,35 @@ struct AddTransactionView: View {
 struct AssetBadge: View {
     let symbol: String
     var size: CGFloat = 34
+    var imageURL: URL? = nil
 
     var body: some View {
         let hue = AssetCatalog.hue(for: symbol)
+        Group {
+            if let imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFit()
+                    } else {
+                        initials(hue)          // loading or failed → initials
+                    }
+                }
+            } else {
+                initials(hue)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .shadow(color: Color(hue: hue, saturation: 0.5, brightness: 0.7).opacity(0.3),
+                radius: 3, y: 1)
+    }
+
+    private func initials(_ hue: Double) -> some View {
         Circle()
             .fill(Color(hue: hue, saturation: 0.55, brightness: 0.85))
             .overlay(
                 Text(symbol.prefix(2).uppercased())
                     .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            )
-            .frame(width: size, height: size)
-            .shadow(color: Color(hue: hue, saturation: 0.5, brightness: 0.7).opacity(0.35),
-                    radius: 3, y: 1)
+                    .foregroundStyle(.white))
     }
 }

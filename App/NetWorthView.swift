@@ -97,7 +97,7 @@ struct NetWorthView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(s.positions.enumerated()), id: \.element.id) { i, p in
                         if i > 0 { Divider() }
-                        HoldingRow(position: p)
+                        HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
                     }
                     if s.cashUSD != 0 {
                         Divider()
@@ -266,10 +266,11 @@ private struct HeroCard: View {
 
 private struct HoldingRow: View {
     let position: Position
+    var imageURL: URL?
 
     var body: some View {
         HStack(spacing: 12) {
-            AssetBadge(symbol: position.assetID)
+            AssetBadge(symbol: position.assetID, imageURL: imageURL)
             VStack(alignment: .leading, spacing: 2) {
                 Text(position.assetID).fontWeight(.semibold)
                 Text(position.qty.formatted(.number.precision(.significantDigits(1...8))))
