@@ -5,6 +5,7 @@ import LedgerCore
 /// `TransactionDraft`; the store turns it into immutable ledger entries.
 struct AddTransactionView: View {
     @Environment(\.dismiss) private var dismiss
+    var catalog: CoinCatalog
     let onSave: (TransactionDraft) -> Void
 
     @State private var draft = TransactionDraft()
@@ -59,15 +60,27 @@ struct AddTransactionView: View {
 
     private var assetSection: some View {
         Section("Asset") {
-            HStack(spacing: 12) {
-                AssetBadge(symbol: draft.asset.isEmpty ? "?" : draft.asset)
-                Picker("Symbol", selection: $draft.asset) {
-                    ForEach(AssetCatalog.common, id: \.self) { Text($0).tag($0) }
-                    if !AssetCatalog.common.contains(draft.asset), !draft.asset.isEmpty {
-                        Text(draft.asset).tag(draft.asset)
+            NavigationLink {
+                CoinPickerView(catalog: catalog) { coin in
+                    draft.asset = coin.symbol
+                    if draft.kind.requiresPrice || draft.kind == .receive {
+                        draft.priceText = "\(coin.priceUSD)"
                     }
                 }
-                .labelsHidden()
+            } label: {
+                HStack(spacing: 12) {
+                    AssetBadge(symbol: draft.asset.isEmpty ? "?" : draft.asset)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(draft.asset.isEmpty ? "Choose a coin" : draft.asset)
+                            .fontWeight(.medium)
+                        if let p = catalog.price(for: draft.asset) {
+                            Text("Live · \(p.formatted(.currency(code: "USD")))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Search all coins").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             TextField("Or type any symbol", text: $draft.asset)
                 .autocorrectionDisabled()

@@ -95,6 +95,25 @@ final class PortfolioStore {
         state = .loaded
     }
 
+    /// Bulk-append transactions (e.g. a CSV import) and re-derive once.
+    func addTransactions(_ drafts: [TransactionDraft]) {
+        guard !drafts.isEmpty else { return }
+        for d in drafts {
+            manualEntries.append(contentsOf: d.makeEntries())
+            if let seed = d.spotSeed, spot[seed.asset] == nil { spot[seed.asset] = seed.price }
+        }
+        manualCount += drafts.count
+        recompute()
+        state = .loaded
+    }
+
+    /// Merge live spot prices (e.g. from CoinGecko) and re-derive valuations.
+    func refreshPrices(from map: [String: Decimal]) {
+        guard !map.isEmpty else { return }
+        for (symbol, price) in map where price > 0 { spot[symbol] = price }
+        recompute()
+    }
+
     private var allEntries: [LedgerEntry] {
         (sourceEntries + manualEntries).sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) }
     }

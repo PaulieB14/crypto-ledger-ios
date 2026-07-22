@@ -3,7 +3,9 @@ import LedgerCore
 
 struct NetWorthView: View {
     @State private var store = PortfolioStore.fixtures()
+    @State private var catalog = CoinCatalog()
     @State private var showingAdd = false
+    @State private var showingImport = false
 
     var body: some View {
         NavigationStack {
@@ -31,15 +33,35 @@ struct NetWorthView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingAdd = true } label: {
-                        Label("Add transaction", systemImage: "plus")
+                    Menu {
+                        Button { showingAdd = true } label: {
+                            Label("New transaction", systemImage: "plus")
+                        }
+                        Button { showingImport = true } label: {
+                            Label("Import CSV…", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
                     }
                 }
             }
             .sheet(isPresented: $showingAdd) {
-                AddTransactionView { store.addTransaction($0) }
+                AddTransactionView(catalog: catalog) { draft in
+                    store.addTransaction(draft)
+                    store.refreshPrices(from: catalog.spotMap)
+                }
             }
-            .task { await store.load() }
+            .sheet(isPresented: $showingImport) {
+                ImportView { drafts in
+                    store.addTransactions(drafts)
+                    store.refreshPrices(from: catalog.spotMap)
+                }
+            }
+            .task {
+                await store.load()
+                await catalog.load()
+                store.refreshPrices(from: catalog.spotMap)
+            }
         }
         .tint(.indigo)
     }
