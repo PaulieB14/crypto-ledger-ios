@@ -1,0 +1,44 @@
+name: iOS build
+
+# Builds the real iOS app on a cloud macOS runner (real Xcode) on every push.
+# No Apple account or code signing needed — this compiles the app for the iOS
+# Simulator, which verifies the full iOS build (SwiftUI, iOS-only APIs, the
+# LedgerCore package) beyond what the local macOS preview can check.
+#
+# To extend this to TestFlight later (once you have the $99 Apple Developer
+# account): add an App Store Connect API key as a repo secret, then archive +
+# `xcodebuild -exportArchive` + upload with `xcrun altool`/`notarytool`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (iOS Simulator, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project CryptoLedger.xcodeproj \
+            -scheme CryptoLedger \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

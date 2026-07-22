@@ -32,3 +32,11 @@ targets:
         # a physical device.
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGNING_ALLOWED: NO
+
+schemes:
+  CryptoLedger:
+    build:
+      targets:
+        CryptoLedger: all
+    run:
+      config: Debug
