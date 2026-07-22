@@ -1,0 +1,82 @@
+{
+  "spot": {
+    "BTC": "95000",
+    "GRT": "0.09"
+  },
+  "entries": [
+    {
+      "id": "e01", "sourceID": "fixture", "externalRef": "cb-dep-1",
+      "timestamp": "2024-01-10T00:00:00Z", "accountID": "coinbase",
+      "assetID": "USD", "qtyDelta": "50000", "kind": "deposit", "unitPriceUSD": "1"
+    },
+    {
+      "id": "e02", "sourceID": "fixture", "externalRef": "cb-trade-1-usd",
+      "timestamp": "2024-01-15T14:30:00Z", "accountID": "coinbase",
+      "assetID": "USD", "qtyDelta": "-21000", "kind": "withdrawal",
+      "unitPriceUSD": "1", "groupID": "t1"
+    },
+    {
+      "id": "e03", "sourceID": "fixture", "externalRef": "cb-trade-1-btc",
+      "timestamp": "2024-01-15T14:30:00Z", "accountID": "coinbase",
+      "assetID": "BTC", "qtyDelta": "0.5", "kind": "buy",
+      "unitPriceUSD": "42000", "groupID": "t1"
+    },
+    {
+      "id": "e04", "sourceID": "fixture", "externalRef": "cb-trade-1-fee",
+      "timestamp": "2024-01-15T14:30:00Z", "accountID": "coinbase",
+      "assetID": "USD", "qtyDelta": "-10", "kind": "fee",
+      "unitPriceUSD": "1", "groupID": "t1"
+    },
+    {
+      "id": "e05", "sourceID": "fixture", "externalRef": "grt-airdrop-1",
+      "timestamp": "2024-05-01T09:00:00Z", "accountID": "ledger",
+      "assetID": "GRT", "qtyDelta": "1000", "kind": "airdrop", "unitPriceUSD": "0.25"
+    },
+    {
+      "id": "e06", "sourceID": "fixture", "externalRef": "cb-trade-2-usd",
+      "timestamp": "2024-06-10T11:00:00Z", "accountID": "coinbase",
+      "assetID": "USD", "qtyDelta": "-20700", "kind": "withdrawal",
+      "unitPriceUSD": "1", "groupID": "t2"
+    },
+    {
+      "id": "e07", "sourceID": "fixture", "externalRef": "cb-trade-2-btc",
+      "timestamp": "2024-06-10T11:00:00Z", "accountID": "coinbase",
+      "assetID": "BTC", "qtyDelta": "0.3", "kind": "buy",
+      "unitPriceUSD": "69000", "groupID": "t2"
+    },
+    {
+      "id": "e08", "sourceID": "fixture", "externalRef": "cb-withdraw-btc-1",
+      "timestamp": "2024-09-01T08:00:00Z", "accountID": "coinbase",
+      "assetID": "BTC", "qtyDelta": "-0.4", "kind": "transferOut", "unitPriceUSD": "59000"
+    },
+    {
+      "id": "e09", "sourceID": "fixture", "externalRef": "chain-deposit-btc-1",
+      "timestamp": "2024-09-01T08:40:00Z", "accountID": "ledger",
+      "assetID": "BTC", "qtyDelta": "0.3995", "kind": "transferIn", "unitPriceUSD": "59000"
+    },
+    {
+      "id": "e10", "sourceID": "fixture", "externalRef": "cb-trade-3-btc",
+      "timestamp": "2025-03-20T16:00:00Z", "accountID": "coinbase",
+      "assetID": "BTC", "qtyDelta": "-0.2", "kind": "sell",
+      "unitPriceUSD": "84000", "groupID": "t3"
+    },
+    {
+      "id": "e11", "sourceID": "fixture", "externalRef": "cb-trade-3-usd",
+      "timestamp": "2025-03-20T16:00:00Z", "accountID": "coinbase",
+      "assetID": "USD", "qtyDelta": "16800", "kind": "deposit",
+      "unitPriceUSD": "1", "groupID": "t3"
+    },
+    {
+      "id": "e12", "sourceID": "fixture", "externalRef": "grt-sell-1",
+      "timestamp": "2025-06-15T10:00:00Z", "accountID": "ledger",
+      "assetID": "GRT", "qtyDelta": "-500", "kind": "sell",
+      "unitPriceUSD": "0.11", "groupID": "t4"
+    },
+    {
+      "id": "e13", "sourceID": "fixture", "externalRef": "grt-sell-1-usd",
+      "timestamp": "2025-06-15T10:00:00Z", "accountID": "ledger",
+      "assetID": "USD", "qtyDelta": "55", "kind": "deposit",
+      "unitPriceUSD": "1", "groupID": "t4"
+    }
+  ]
+}
