@@ -182,10 +182,14 @@ private struct ReviewQueueView: View {
             }
         }
         .navigationTitle("Review")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
+#if os(iOS)
 #Preview {
     NetWorthView()
 }
+#endif
