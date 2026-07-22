@@ -72,12 +72,22 @@ final class PortfolioStore {
         }
         state = .loading
         spot = initialSpot
+        // Restore transactions the user entered in previous sessions, and seed
+        // a fallback price from each so restored holdings show a value before
+        // the live price refresh lands.
+        manualEntries = LedgerStore.load()
+        manualCount = manualEntries.count
+        for e in manualEntries where e.assetID != "USD" {
+            if let p = e.unitPriceUSD, p > 0, spot[e.assetID] == nil { spot[e.assetID] = p }
+        }
         do {
             sourceEntries = try await aggregator.loadAll()
             recompute()
             state = .loaded
         } catch {
-            state = .failed(error.localizedDescription)
+            // Even if the demo source fails, the user's own persisted entries stand.
+            recompute()
+            state = manualEntries.isEmpty ? .failed(error.localizedDescription) : .loaded
         }
     }
 
@@ -93,6 +103,7 @@ final class PortfolioStore {
         }
         recompute()
         state = .loaded
+        LedgerStore.save(manualEntries)
     }
 
     /// Bulk-append transactions (e.g. a CSV import) and re-derive once.
@@ -105,6 +116,7 @@ final class PortfolioStore {
         manualCount += drafts.count
         recompute()
         state = .loaded
+        LedgerStore.save(manualEntries)
     }
 
     /// Merge live spot prices (e.g. from CoinGecko) and re-derive valuations.
