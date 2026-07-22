@@ -13,12 +13,22 @@ final class PortfolioStore {
     private(set) var state: LoadState = .idle
     private(set) var snapshot: PortfolioSnapshot?
 
+    /// Count of transactions the user has entered this session (for the UI).
+    private(set) var manualCount: Int = 0
+
     var method: CostBasisMethod = .fifo {
         didSet { recompute() }
     }
 
-    private var entries: [LedgerEntry] = []
-    private let spot: [String: Decimal]
+    private var sourceEntries: [LedgerEntry] = []
+    private var manualEntries: [LedgerEntry] = []
+
+    /// Working spot prices — seeded from the source in `load()`, then extended
+    /// as the user adds assets. A plain `[:]` default means the `nonisolated`
+    /// init never touches this main-actor-isolated property.
+    private var spot: [String: Decimal] = [:]
+
+    private let initialSpot: [String: Decimal]
     private let aggregator: SourceAggregator
     private let initialError: String?
 
@@ -31,7 +41,7 @@ final class PortfolioStore {
         initialError: String? = nil
     ) {
         self.aggregator = SourceAggregator(sources: sources)
-        self.spot = spot
+        self.initialSpot = spot
         self.initialError = initialError
     }
 
@@ -61,12 +71,9 @@ final class PortfolioStore {
             return
         }
         state = .loading
+        spot = initialSpot
         do {
-            entries = try await aggregator.loadAll()
-            guard !entries.isEmpty else {
-                state = .failed("No entries returned by any source.")
-                return
-            }
+            sourceEntries = try await aggregator.loadAll()
             recompute()
             state = .loaded
         } catch {
@@ -74,8 +81,27 @@ final class PortfolioStore {
         }
     }
 
+    /// Append a user-entered transaction and re-derive everything. Additive and
+    /// immutable-friendly: nothing is edited, the portfolio is just re-folded.
+    func addTransaction(_ draft: TransactionDraft) {
+        let new = draft.makeEntries()
+        guard !new.isEmpty else { return }
+        manualEntries.append(contentsOf: new)
+        manualCount += 1
+        if let seed = draft.spotSeed, spot[seed.asset] == nil {
+            spot[seed.asset] = seed.price
+        }
+        recompute()
+        state = .loaded
+    }
+
+    private var allEntries: [LedgerEntry] {
+        (sourceEntries + manualEntries).sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) }
+    }
+
     private func recompute() {
-        guard !entries.isEmpty else { return }
+        let entries = allEntries
+        guard !entries.isEmpty else { snapshot = nil; return }
         snapshot = PortfolioEngine(method: method).snapshot(entries: entries, spot: spot)
     }
 }
