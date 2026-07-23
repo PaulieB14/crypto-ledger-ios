@@ -66,7 +66,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     /// Show alert notifications as banners even when Argus is in the foreground.
-    func userNotificationCenter(
+    /// `nonisolated` to match the delegate requirement — `AppDelegate` is
+    /// inferred `@MainActor` via `UIApplicationDelegate`, but this callback isn't
+    /// and its parameters aren't `Sendable`.
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
