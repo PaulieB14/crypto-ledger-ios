@@ -205,6 +205,8 @@ struct NetWorthView: View {
 
     private func reviewCard(_ s: PortfolioSnapshot) -> some View {
         let count = s.transfersNeedingReview.count + s.unpairedTransfers.count
+            + s.uncoveredDisposals.count + s.unpricedAcquisitions.count
+            + s.assetsMissingPrice.count
         return NavigationLink {
             ReviewQueueView(snapshot: s)
         } label: {
@@ -456,6 +458,47 @@ private struct ReviewQueueView: View {
 
     var body: some View {
         List {
+            if !snapshot.assetsMissingPrice.isEmpty {
+                Section {
+                    ForEach(snapshot.assetsMissingPrice, id: \.self) { symbol in
+                        HStack(spacing: 12) {
+                            AssetBadge(symbol: symbol, size: 28)
+                            Text(symbol).font(.body.weight(.medium))
+                            Spacer()
+                            Text("No price").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("No live price")
+                } footer: {
+                    Text("We couldn't fetch a current price for these, so their value isn't counted yet. Check the symbol is right, or try again when you're back online.")
+                }
+            }
+
+            if !snapshot.unpricedAcquisitions.isEmpty {
+                Section {
+                    ForEach(snapshot.unpricedAcquisitions) { entry in
+                        reviewRow(entry.assetID, entry.timestamp, detail: entry.accountID)
+                    }
+                } header: {
+                    Text("Missing purchase price")
+                } footer: {
+                    Text("These were added without a price, so they have no cost basis. Add one to see accurate gains.")
+                }
+            }
+
+            if !snapshot.uncoveredDisposals.isEmpty {
+                Section {
+                    ForEach(snapshot.uncoveredDisposals) { entry in
+                        reviewRow(entry.assetID, entry.timestamp, detail: entry.accountID)
+                    }
+                } header: {
+                    Text("Sold more than we have on record")
+                } footer: {
+                    Text("We have no earlier purchase to draw a cost basis from for these sales. Add the buy that came before them.")
+                }
+            }
+
             if !snapshot.transfersNeedingReview.isEmpty {
                 Section("Possible transfers") {
                     ForEach(snapshot.transfersNeedingReview, id: \.self) { candidate in
@@ -468,15 +511,11 @@ private struct ReviewQueueView: View {
                     }
                 }
             }
+
             if !snapshot.unpairedTransfers.isEmpty {
                 Section {
                     ForEach(snapshot.unpairedTransfers) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(entry.assetID) · \(entry.accountID)")
-                                .font(.body.weight(.medium))
-                            Text(entry.timestamp, format: .dateTime.year().month().day())
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+                        reviewRow(entry.assetID, entry.timestamp, detail: entry.accountID)
                     }
                 } header: {
                     Text("No matching account")
@@ -489,6 +528,17 @@ private struct ReviewQueueView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+
+    private func reviewRow(_ assetID: String, _ date: Date, detail: String) -> some View {
+        HStack(spacing: 12) {
+            AssetBadge(symbol: assetID, size: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(assetID) · \(detail)").font(.body.weight(.medium))
+                Text(date, format: .dateTime.year().month().day())
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

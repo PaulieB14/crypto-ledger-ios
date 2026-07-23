@@ -66,6 +66,11 @@ struct TransactionDraft {
     /// Trading fee in USD. Blank means none.
     var fee: Decimal { Decimal(string: feeText.trimmingCharacters(in: .whitespaces)) ?? 0 }
 
+    /// Canonical symbol used for the ledger + price lookups. Uppercasing here is
+    /// what keeps a typed `btc` from mismatching CoinGecko's `BTC` and showing a
+    /// phantom "no price" review item.
+    var normalizedAsset: String { asset.trimmingCharacters(in: .whitespaces).uppercased() }
+
     var isValid: Bool {
         guard let q = quantity, q > 0 else { return false }
         if kind.requiresPrice { return (price ?? 0) > 0 }
@@ -107,6 +112,7 @@ struct TransactionDraft {
     /// correct automatically.
     func makeEntries() -> [LedgerEntry] {
         let ref = "manual-\(UUID().uuidString)"
+        let asset = normalizedAsset
         let q = quantity ?? 0
         let p = price ?? 0
 
@@ -156,7 +162,7 @@ struct TransactionDraft {
     /// shows a value instead of "No price".
     var spotSeed: (asset: String, price: Decimal)? {
         guard kind.isCrypto, let p = price, p > 0 else { return nil }
-        return (asset, p)
+        return (normalizedAsset, p)
     }
 }
 
