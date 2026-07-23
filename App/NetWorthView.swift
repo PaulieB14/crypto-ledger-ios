@@ -224,7 +224,7 @@ struct NetWorthView: View {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.title2).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(count) item\(count == 1 ? "" : "s") need review")
+                    Text("\(count) item\(count == 1 ? "" : "s") \(count == 1 ? "needs" : "need") review")
                         .fontWeight(.semibold).foregroundStyle(.primary)
                     Text("Totals stay incomplete until you resolve them.")
                         .font(.caption).foregroundStyle(.secondary)

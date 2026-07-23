@@ -21,6 +21,11 @@ struct AddTransactionView: View {
         self.onSave = onSave
         var initial = TransactionDraft()
         if let lockedKind { initial.kind = lockedKind }
+        // Seed the live price for the default coin so a balance holding is priced
+        // from the moment the sheet opens (the catalog is usually already loaded).
+        if lockedKind == .balance, let p = catalog.price(for: initial.asset), p > 0 {
+            initial.priceText = "\(p)"
+        }
         _draft = State(initialValue: initial)
     }
 
@@ -33,11 +38,14 @@ struct AddTransactionView: View {
                 detailSection
                 if let est = draft.estimatedUSD { estimateSection(est) }
             }
-            .onChange(of: draft.asset) { _, newValue in
-                // Balance entries are valued at today's price, so keep an unset
-                // price in step with the picked coin (cost basis = current value).
-                if draft.kind == .balance, draft.priceText.isEmpty,
-                   let p = catalog.price(for: newValue) {
+            .task(id: draft.asset) {
+                // A balance holding is valued at today's price. Capture a live
+                // price for the current asset — on appear (covers the pre-filled
+                // default, which an onChange would miss) and on every change,
+                // loading the catalog first if it isn't ready yet.
+                guard draft.kind == .balance else { return }
+                if catalog.coins.isEmpty { await catalog.load() }
+                if let p = catalog.price(for: draft.asset), p > 0 {
                     draft.priceText = "\(p)"
                 }
             }
