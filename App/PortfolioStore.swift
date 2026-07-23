@@ -45,6 +45,13 @@ final class PortfolioStore {
         self.initialError = initialError
     }
 
+    /// A fresh, empty portfolio — the real app entry point. No demo data: a
+    /// brand-new install opens at $0 and restores only the transactions the user
+    /// entered themselves.
+    nonisolated static func live() -> PortfolioStore {
+        PortfolioStore(sources: [])
+    }
+
     /// Development wiring. No network, no keys, no accounts.
     ///
     /// A fixture that fails to load reports why instead of rendering an empty
@@ -124,6 +131,44 @@ final class PortfolioStore {
         guard !map.isEmpty else { return }
         for (symbol, price) in map where price > 0 { spot[symbol] = price }
         recompute()
+    }
+
+    /// Remove a holding entirely: every manual entry for the asset plus the
+    /// paired cash legs of its trades (matched by `groupID`). Immutable-friendly
+    /// — nothing is edited, the deleted facts are simply dropped and the
+    /// portfolio re-folded. Demo/source entries aren't touched.
+    func removeAsset(_ assetID: String) {
+        let groups = Set(manualEntries.filter { $0.assetID == assetID }.compactMap(\.groupID))
+        let before = manualEntries.count
+        manualEntries.removeAll { e in
+            e.assetID == assetID || (e.groupID.map(groups.contains) ?? false)
+        }
+        guard manualEntries.count != before else { return }
+        manualCount = manualEntries.count
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+    }
+
+    /// Wipe every transaction the user entered (and any loaded sample data),
+    /// back to a clean $0 slate.
+    func clearAll() {
+        manualEntries = []
+        sourceEntries = []
+        manualCount = 0
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+    }
+
+    /// Load the bundled sample portfolio for a quick look. It lives only in
+    /// memory (never persisted), so "Clear all" removes it cleanly.
+    func loadSample() {
+        guard let bundle = try? FixtureBundle.load() else { return }
+        sourceEntries = bundle.entries
+        for (asset, price) in bundle.spot where spot[asset] == nil { spot[asset] = price }
+        recompute()
+        state = .loaded
     }
 
     private var allEntries: [LedgerEntry] {

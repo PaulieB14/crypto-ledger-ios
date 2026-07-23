@@ -8,12 +8,18 @@ import LedgerCore
 struct TransactionDraft {
 
     enum Kind: String, CaseIterable, Identifiable {
-        case buy, sell, receive, deposit
+        case balance, buy, sell, receive, deposit
 
         var id: String { rawValue }
 
+        /// Kinds offered in the "Add transaction" segmented picker. `balance` is
+        /// the simplest, separate on-ramp and gets its own focused sheet, so it
+        /// isn't listed here.
+        static var transactionKinds: [Kind] { [.buy, .sell, .receive, .deposit] }
+
         var title: String {
             switch self {
+            case .balance: "I own"
             case .buy: "Buy"
             case .sell: "Sell"
             case .receive: "Receive"
@@ -23,6 +29,7 @@ struct TransactionDraft {
 
         var subtitle: String {
             switch self {
+            case .balance: "Enter how much you already hold — valued at today's price"
             case .buy: "Spend cash to acquire crypto"
             case .sell: "Dispose crypto for cash"
             case .receive: "Crypto arrived (airdrop, transfer, reward)"
@@ -32,6 +39,7 @@ struct TransactionDraft {
 
         var icon: String {
             switch self {
+            case .balance: "chart.pie.fill"
             case .buy: "arrow.down.left.circle.fill"
             case .sell: "arrow.up.right.circle.fill"
             case .receive: "tray.and.arrow.down.fill"
@@ -41,7 +49,7 @@ struct TransactionDraft {
 
         var isCash: Bool { self == .deposit }
         var isCrypto: Bool { !isCash }
-        /// Buy/sell always need a price; receive is optional (cost basis).
+        /// Buy/sell always need a price; receive and balance are optional (cost basis).
         var requiresPrice: Bool { self == .buy || self == .sell }
     }
 
@@ -65,7 +73,7 @@ struct TransactionDraft {
     var estimatedUSD: Decimal? {
         switch kind {
         case .deposit: quantity
-        case .buy, .sell, .receive:
+        case .buy, .sell, .receive, .balance:
             if let q = quantity, let p = price { q * p } else { nil }
         }
     }
@@ -103,6 +111,11 @@ struct TransactionDraft {
                     entry("USD", q * p, .deposit, 1, group: ref)]
         case .receive:
             // Acquisition at the given cost (or zero-cost if left blank).
+            return [entry(asset, q, .airdrop, price)]
+        case .balance:
+            // "I already hold this much." Priced at today's spot so cost basis
+            // equals current value and unrealized P&L starts at zero — honest
+            // when the real purchase price is unknown.
             return [entry(asset, q, .airdrop, price)]
         case .deposit:
             return [entry("USD", q, .deposit, 1)]

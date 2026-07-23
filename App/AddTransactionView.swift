@@ -6,9 +6,23 @@ import LedgerCore
 struct AddTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     var catalog: CoinCatalog
+    /// When set, the sheet is fixed to one kind and hides the type picker — used
+    /// for the simplest "Add holding" on-ramp (`.balance`).
+    var lockedKind: TransactionDraft.Kind?
     let onSave: (TransactionDraft) -> Void
 
-    @State private var draft = TransactionDraft()
+    @State private var draft: TransactionDraft
+
+    init(catalog: CoinCatalog,
+         lockedKind: TransactionDraft.Kind? = nil,
+         onSave: @escaping (TransactionDraft) -> Void) {
+        self.catalog = catalog
+        self.lockedKind = lockedKind
+        self.onSave = onSave
+        var initial = TransactionDraft()
+        if let lockedKind { initial.kind = lockedKind }
+        _draft = State(initialValue: initial)
+    }
 
     var body: some View {
         NavigationStack {
@@ -19,7 +33,15 @@ struct AddTransactionView: View {
                 detailSection
                 if let est = draft.estimatedUSD { estimateSection(est) }
             }
-            .navigationTitle("New Transaction")
+            .onChange(of: draft.asset) { _, newValue in
+                // Balance entries are valued at today's price, so keep an unset
+                // price in step with the picked coin (cost basis = current value).
+                if draft.kind == .balance, draft.priceText.isEmpty,
+                   let p = catalog.price(for: newValue) {
+                    draft.priceText = "\(p)"
+                }
+            }
+            .navigationTitle(navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -34,17 +56,23 @@ struct AddTransactionView: View {
         .frame(minWidth: 360, minHeight: 480)
     }
 
+    private var navigationTitle: String {
+        lockedKind == .balance ? "Add Holding" : "New Transaction"
+    }
+
     // MARK: Sections
 
     private var typeSection: some View {
         Section {
-            Picker("Type", selection: $draft.kind) {
-                ForEach(TransactionDraft.Kind.allCases) { kind in
-                    Text(kind.title).tag(kind)
+            if lockedKind == nil {
+                Picker("Type", selection: $draft.kind) {
+                    ForEach(TransactionDraft.Kind.transactionKinds) { kind in
+                        Text(kind.title).tag(kind)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             HStack(spacing: 10) {
                 Image(systemName: draft.kind.icon)
@@ -63,7 +91,7 @@ struct AddTransactionView: View {
             NavigationLink {
                 CoinPickerView(catalog: catalog) { coin in
                     draft.asset = coin.symbol
-                    if draft.kind.requiresPrice || draft.kind == .receive {
+                    if draft.kind.requiresPrice || draft.kind == .receive || draft.kind == .balance {
                         draft.priceText = "\(coin.priceUSD)"
                     }
                 }
@@ -91,10 +119,18 @@ struct AddTransactionView: View {
         }
     }
 
+    private var amountHeader: String {
+        switch draft.kind {
+        case .deposit: "Amount"
+        case .balance: "How much you hold"
+        default: "Details"
+        }
+    }
+
     private var amountSection: some View {
-        Section(draft.kind.isCash ? "Amount" : "Details") {
+        Section(amountHeader) {
             decimalField(
-                label: "Quantity",
+                label: draft.kind == .balance ? "Amount you own" : "Quantity",
                 text: $draft.quantityText,
                 placeholder: draft.kind.isCash ? "1000" : "0.5",
                 suffix: draft.kind.isCash ? "USD" : draft.asset.uppercased())
@@ -105,6 +141,10 @@ struct AddTransactionView: View {
             } else if draft.kind == .receive {
                 decimalField(label: "Cost / unit (optional)", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
+            } else if draft.kind == .balance {
+                Text("Valued at today's live price. No purchase price needed — your gain starts from here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

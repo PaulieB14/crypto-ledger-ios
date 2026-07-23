@@ -2,10 +2,12 @@ import SwiftUI
 import LedgerCore
 
 struct NetWorthView: View {
-    @State private var store = PortfolioStore.fixtures()
+    @State private var store = PortfolioStore.live()
     @State private var catalog = CoinCatalog()
+    @State private var showingBalance = false
     @State private var showingAdd = false
     @State private var showingImport = false
+    @State private var showingHelp = false
 
     var body: some View {
         NavigationStack {
@@ -34,15 +36,36 @@ struct NetWorthView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button { showingAdd = true } label: {
-                            Label("New transaction", systemImage: "plus")
+                        Section("Add what you own") {
+                            Button { showingBalance = true } label: {
+                                Label("Add holding", systemImage: "chart.pie.fill")
+                            }
+                            Button { showingAdd = true } label: {
+                                Label("Add transaction", systemImage: "arrow.left.arrow.right")
+                            }
+                            Button { showingImport = true } label: {
+                                Label("Import CSV…", systemImage: "square.and.arrow.down")
+                            }
                         }
-                        Button { showingImport = true } label: {
-                            Label("Import CSV…", systemImage: "square.and.arrow.down")
+                        if store.snapshot != nil {
+                            Button(role: .destructive) { store.clearAll() } label: {
+                                Label("Clear all", systemImage: "trash")
+                            }
                         }
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { showingHelp = true } label: {
+                        Label("How it works", systemImage: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingBalance) {
+                AddTransactionView(catalog: catalog, lockedKind: .balance) { draft in
+                    store.addTransaction(draft)
+                    store.refreshPrices(from: catalog.spotMap)
                 }
             }
             .sheet(isPresented: $showingAdd) {
@@ -56,6 +79,9 @@ struct NetWorthView: View {
                     store.addTransactions(drafts)
                     store.refreshPrices(from: catalog.spotMap)
                 }
+            }
+            .sheet(isPresented: $showingHelp) {
+                HelpView()
             }
             .task {
                 await store.load()
@@ -105,6 +131,13 @@ struct NetWorthView: View {
                             HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                store.removeAsset(p.assetID)
+                            } label: {
+                                Label("Remove \(p.assetID)", systemImage: "trash")
+                            }
+                        }
                     }
                     if s.cashUSD != 0 {
                         Divider()
@@ -177,21 +210,91 @@ struct NetWorthView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Empty
+    // MARK: - Empty / onboarding
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No transactions yet", systemImage: "tray")
-        } description: {
-            Text("Add a purchase, a deposit, or crypto you received to start tracking your net worth.")
-        } actions: {
-            Button {
-                showingAdd = true
-            } label: {
-                Label("Add your first transaction", systemImage: "plus")
+        ScrollView {
+            VStack(spacing: 22) {
+                VStack(spacing: 8) {
+                    Image(systemName: "chart.pie.fill")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.indigo)
+                        .padding(.top, 8)
+                    Text("Track your crypto net worth")
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Text("Start with what you have. Pick the way that's easiest — you can always add more later.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 8)
+
+                VStack(spacing: 12) {
+                    onRamp(1, "Add what you hold",
+                           "Just enter how much of each coin you own. Simplest.") {
+                        showingBalance = true
+                    }
+                    onRamp(2, "Log your buys & sells",
+                           "Enter transactions to track cost basis and real gains.") {
+                        showingAdd = true
+                    }
+                    onRamp(3, "Import a CSV",
+                           "Bring your full history from an exchange. Most complete.") {
+                        showingImport = true
+                    }
+                }
+
+                VStack(spacing: 10) {
+                    Button { store.loadSample() } label: {
+                        Text("Preview with sample data")
+                            .font(.footnote.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.indigo)
+
+                    Text("Everything stays on your device.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.top, 2)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(20)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
         }
+        .background(backdrop)
+    }
+
+    /// A single tap-to-start onboarding row. The number encodes a real
+    /// progression — easiest first, most complete last.
+    private func onRamp(_ number: Int, _ title: String, _ subtitle: String,
+                        action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Color.indigo.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Text("\(number)")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.indigo)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline).foregroundStyle(.primary)
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private var backdrop: some View {
