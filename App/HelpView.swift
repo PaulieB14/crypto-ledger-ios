@@ -56,14 +56,14 @@ struct HelpView: View {
             }
         }
         .frame(minWidth: 360, minHeight: 480)
-        .tint(.indigo)
+        .tint(Theme.amber)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "chart.pie.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(Theme.amber)
             Text("Track everything you hold in one place, with live prices and real cost-basis math.")
                 .font(.title3.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
@@ -82,8 +82,8 @@ struct HelpView: View {
     private func step(_ number: Int, _ title: String, _ body: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                Circle().fill(Color.indigo.opacity(0.14)).frame(width: 30, height: 30)
-                Text("\(number)").font(.subheadline.weight(.bold)).foregroundStyle(.indigo)
+                Circle().fill(Theme.amber.opacity(0.14)).frame(width: 30, height: 30)
+                Text("\(number)").font(.subheadline.weight(.bold)).foregroundStyle(Theme.amber)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold))
@@ -95,7 +95,7 @@ struct HelpView: View {
 
     private func bullet(_ term: String, _ body: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(Color.indigo).frame(width: 5, height: 5).padding(.top, 6)
+            Circle().fill(Theme.amber).frame(width: 5, height: 5).padding(.top, 6)
             Text("**\(term).** \(body)")
                 .font(.caption)
                 .foregroundStyle(.secondary)

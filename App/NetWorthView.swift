@@ -101,6 +101,7 @@ struct NetWorthView: View {
                 await catalog.load()
                 store.refreshPrices(from: catalog.spotMap)
                 alerts.evaluate(spot: catalog.spotMap)
+                await store.reconstructHistory(coinIDBySymbol: catalog.coinIDMap())
             }
             .onChange(of: scenePhase) { _, phase in
                 // Returning to the app is a good moment to re-price and re-check
@@ -114,7 +115,7 @@ struct NetWorthView: View {
                 }
             }
         }
-        .tint(.indigo)
+        .tint(Theme.amber)
     }
 
     // MARK: - Loaded
@@ -122,7 +123,7 @@ struct NetWorthView: View {
     private func loaded(_ s: PortfolioSnapshot) -> some View {
         ScrollView {
             VStack(spacing: 16) {
-                HeroCard(snapshot: s)
+                HeroCard(snapshot: s, points: store.historyPoints)
 
                 if s.hasOpenQuestions {
                     reviewCard(s)
@@ -142,7 +143,7 @@ struct NetWorthView: View {
         Card(title: "Holdings", systemImage: "circle.grid.2x2") {
             if s.positions.isEmpty {
                 Text("No open positions yet. Tap ")
-                    + Text(Image(systemName: "plus.circle.fill")).foregroundColor(.indigo)
+                    + Text(Image(systemName: "plus.circle.fill")).foregroundColor(Theme.amber)
                     + Text(" to add one.")
             } else {
                 VStack(spacing: 0) {
@@ -209,7 +210,7 @@ struct NetWorthView: View {
             Spacer()
             Text(value, format: .currency(code: "USD"))
                 .monospacedDigit()
-                .foregroundStyle(value >= 0 ? Color.primary : .red)
+                .foregroundStyle(value >= 0 ? Theme.ink : Theme.loss)
         }
         .padding(.vertical, 4)
     }
@@ -223,7 +224,7 @@ struct NetWorthView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "questionmark.circle.fill")
-                    .font(.title2).foregroundStyle(.orange)
+                    .font(.title2).foregroundStyle(Theme.amber)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(count) item\(count == 1 ? "" : "s") \(count == 1 ? "needs" : "need") review")
                         .fontWeight(.semibold).foregroundStyle(.primary)
@@ -234,7 +235,7 @@ struct NetWorthView: View {
                 Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
             }
             .padding(16)
-            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+            .background(Theme.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
     }
@@ -247,7 +248,7 @@ struct NetWorthView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "chart.pie.fill")
                         .font(.system(size: 42))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Theme.amber)
                         .padding(.top, 8)
                     Text("Track your crypto net worth")
                         .font(.title2.weight(.bold))
@@ -277,12 +278,15 @@ struct NetWorthView: View {
                 walletImportButton
 
                 VStack(spacing: 10) {
-                    Button { store.loadSample() } label: {
+                    Button {
+                        store.loadSample()
+                        Task { await store.reconstructHistory(coinIDBySymbol: catalog.coinIDMap()) }
+                    } label: {
                         Text("Preview with sample data")
                             .font(.footnote.weight(.medium))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(Theme.amber)
 
                     Text("Everything stays on your device.")
                         .font(.caption2)
@@ -304,8 +308,8 @@ struct NetWorthView: View {
         } label: {
             HStack(spacing: 14) {
                 ZStack {
-                    Circle().fill(Color.indigo.opacity(0.14)).frame(width: 40, height: 40)
-                    Image(systemName: "wallet.pass").font(.headline).foregroundStyle(.indigo)
+                    Circle().fill(Theme.amber.opacity(0.14)).frame(width: 40, height: 40)
+                    Image(systemName: "wallet.pass").font(.headline).foregroundStyle(Theme.amber)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Import from a wallet").font(.headline).foregroundStyle(.primary)
@@ -318,9 +322,9 @@ struct NetWorthView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+            .background(Theme.amber.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.indigo.opacity(0.18), lineWidth: 1))
+                .stroke(Theme.amber.opacity(0.18), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -332,11 +336,11 @@ struct NetWorthView: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 ZStack {
-                    Circle().fill(Color.indigo.opacity(0.14))
+                    Circle().fill(Theme.amber.opacity(0.14))
                         .frame(width: 40, height: 40)
                     Text("\(number)")
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Theme.amber)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.headline).foregroundStyle(.primary)
@@ -349,15 +353,15 @@ struct NetWorthView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                .stroke(Theme.hairline, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
     private var backdrop: some View {
-        Color.primary.opacity(0.03).ignoresSafeArea()
+        Theme.paper.ignoresSafeArea()
     }
 }
 
@@ -365,69 +369,113 @@ struct NetWorthView: View {
 
 private struct HeroCard: View {
     let snapshot: PortfolioSnapshot
+    let points: [NetWorthPoint]
+
+    @State private var scrubbed: NetWorthPoint?
+
+    private var currentValue: Double {
+        scrubbed?.value ?? (snapshot.netWorthUSD as NSDecimalNumber).doubleValue
+    }
+    private var openValue: Double { points.first?.value ?? currentValue }
+    private var delta: Double { currentValue - openValue }
+    private var pct: Double { openValue != 0 ? delta / openValue * 100 : 0 }
+    private var up: Bool { delta >= 0 }
+    private var dateline: Date { scrubbed?.date ?? snapshot.asOf }
+    private var unpricedCount: Int {
+        snapshot.assetsMissingPrice.count + snapshot.unpricedAcquisitions.count
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 6) {
-                Text("NET WORTH")
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.5)
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(snapshot.netWorthUSD, format: .currency(code: "USD"))
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+        VStack(alignment: .leading, spacing: 14) {
+            // Header: freshness dot + rubric, with the editorial dateline.
+            HStack {
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.amber).frame(width: 7, height: 7)
+                    Text("NET WORTH").font(.rubric()).tracking(0.8)
+                        .foregroundStyle(Theme.inkSecondary)
+                }
+                Spacer()
+                Text("as of \(dateline, format: .dateTime.hour().minute())")
+                    .font(.editorial(12)).foregroundStyle(Theme.inkSecondary)
+            }
+
+            // The figure — neutral Ink, never colored; a dagger if we exclude anything.
+            HStack(alignment: .top, spacing: 1) {
+                Text(currentValue, format: .currency(code: "USD"))
+                    .font(.figure(42, .medium)).monospacedDigit()
                     .contentTransition(.numericText())
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                if snapshot.cryptoValueUSD != 0 {
-                    changeChip
+                    .foregroundStyle(Theme.ink)
+                    .minimumScaleFactor(0.5).lineLimit(1)
+                if unpricedCount > 0 {
+                    Text("†").font(.figure(18)).foregroundStyle(Theme.amber)
                 }
             }
 
-            HStack(spacing: 12) {
-                tile("Cash", snapshot.cashUSD, "banknote.fill")
-                tile("Crypto", snapshot.cryptoValueUSD, "bitcoinsign.circle.fill")
+            // Delta — the only place color is spent on the headline.
+            if points.count >= 2 {
+                HStack(spacing: 8) {
+                    Image(systemName: up ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(abs(delta), format: .currency(code: "USD")).monospacedDigit()
+                    Text("\(up ? "+" : "-")\(abs(pct), format: .number.precision(.fractionLength(2)))%")
+                        .monospacedDigit()
+                }
+                .font(.figure(15, .medium))
+                .foregroundStyle(up ? Theme.gain : Theme.loss)
+            }
+
+            NetWorthChart(points: points) { p in scrubbed = p }
+                .frame(height: 148)
+
+            allocationBar
+
+            if unpricedCount > 0 {
+                Text("† excludes \(unpricedCount) unpriced asset\(unpricedCount == 1 ? "" : "s")")
+                    .font(.system(size: 11)).foregroundStyle(Theme.inkSecondary)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(22)
-        .background(
-            LinearGradient(
-                colors: [Color(hue: 0.66, saturation: 0.62, brightness: 0.62),
-                         Color(hue: 0.74, saturation: 0.58, brightness: 0.5)],
-                startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 24))
-        .shadow(color: .indigo.opacity(0.3), radius: 14, y: 8)
-    }
-
-    private var changeChip: some View {
-        let up = snapshot.unrealizedUSD >= 0
-        return HStack(spacing: 4) {
-            Image(systemName: up ? "arrow.up.right" : "arrow.down.right")
-            Text(snapshot.unrealizedUSD, format: .currency(code: "USD"))
-                .monospacedDigit()
-            Text("unrealized").opacity(0.8)
-        }
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(.white)
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.white.opacity(0.18), in: Capsule())
-    }
-
-    private func tile(_ label: String, _ value: Decimal, _ icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(label, systemImage: icon)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white.opacity(0.75))
-            Text(value, format: .currency(code: "USD"))
-                .font(.headline).monospacedDigit()
-                .foregroundStyle(.white)
-                .minimumScaleFactor(0.7).lineLimit(1)
-        }
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    // 100%-stacked hairline allocation bar — cash vs crypto.
+    private var allocationBar: some View {
+        let cash = max(0, (snapshot.cashUSD as NSDecimalNumber).doubleValue)
+        let crypto = max(0, (snapshot.cryptoValueUSD as NSDecimalNumber).doubleValue)
+        let total = cash + crypto
+        return VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                HStack(spacing: total > 0 ? 1 : 0) {
+                    if total > 0 {
+                        Rectangle().fill(Theme.ink)
+                            .frame(width: geo.size.width * crypto / total)
+                        Rectangle().fill(Theme.inkSecondary)
+                            .frame(width: geo.size.width * cash / total)
+                    } else {
+                        Rectangle().fill(Theme.hairline)
+                    }
+                }
+            }
+            .frame(height: 6)
+            .clipShape(Capsule())
+
+            HStack(spacing: 18) {
+                legend(Theme.ink, "CRYPTO", crypto)
+                legend(Theme.inkSecondary, "CASH", cash)
+                Spacer()
+            }
+        }
+    }
+
+    private func legend(_ color: Color, _ label: String, _ value: Double) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
+            Text(label).font(.rubric(10)).tracking(0.5).foregroundStyle(Theme.inkSecondary)
+            Text(value, format: .currency(code: "USD").precision(.fractionLength(0)))
+                .font(.figure(12)).monospacedDigit().foregroundStyle(Theme.ink)
+        }
     }
 }
 
@@ -456,7 +504,7 @@ private struct HoldingRow: View {
                 if let unrealized = position.unrealizedUSD {
                     Text(unrealized, format: .currency(code: "USD"))
                         .font(.caption).monospacedDigit()
-                        .foregroundStyle(unrealized >= 0 ? .green : .red)
+                        .foregroundStyle(unrealized >= 0 ? Theme.gain : Theme.loss)
                 }
             }
             Image(systemName: "chevron.right")
@@ -477,18 +525,18 @@ struct Card<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 if let systemImage {
-                    Image(systemName: systemImage).foregroundStyle(.indigo)
+                    Image(systemName: systemImage).foregroundStyle(Theme.amber)
                 }
-                Text(title).font(.headline)
+                Text(title).font(.headline).foregroundStyle(Theme.ink)
             }
             content
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                .stroke(Theme.hairline, lineWidth: 1))
     }
 }
 

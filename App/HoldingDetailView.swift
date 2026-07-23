@@ -29,7 +29,7 @@ struct HoldingDetailView: View {
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.primary.opacity(0.03).ignoresSafeArea())
+        .background(Theme.paper.ignoresSafeArea())
         .navigationTitle(position.assetID)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -95,7 +95,7 @@ struct HoldingDetailView: View {
                     Spacer()
                     Text("\(u >= 0 ? "+" : "")\(u.formatted(.currency(code: "USD")))")
                         .monospacedDigit().fontWeight(.semibold)
-                        .foregroundStyle(u >= 0 ? .green : .red)
+                        .foregroundStyle(u >= 0 ? Theme.gain : Theme.loss)
                 }
                 .padding(.vertical, 4)
             }
@@ -143,7 +143,7 @@ struct HoldingDetailView: View {
                     .font(.subheadline.weight(.medium))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.indigo)
+            .foregroundStyle(Theme.amber)
             .padding(.top, 4)
         }
     }
@@ -152,23 +152,23 @@ struct HoldingDetailView: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill((alert.isActive ? Color.indigo : Color.secondary).opacity(0.14))
+                    .fill((alert.isActive ? Theme.amber : Color.secondary).opacity(0.14))
                     .frame(width: 32, height: 32)
                 Image(systemName: alert.direction.icon)
                     .font(.footnote.weight(.bold))
-                    .foregroundStyle(alert.isActive ? Color.indigo : Color.secondary)
+                    .foregroundStyle(alert.isActive ? Theme.amber : Color.secondary)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(alert.direction.label) \(alert.targetUSD.formatted(.currency(code: "USD")))")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(alert.isActive ? .primary : .secondary)
                 Text(alert.isActive ? "Active" : "Triggered")
-                    .font(.caption).foregroundStyle(alert.isActive ? .green : .secondary)
+                    .font(.caption).foregroundStyle(alert.isActive ? Theme.gain : Color.secondary)
             }
             Spacer()
             if !alert.isActive {
                 Button("Re-arm") { alerts.setActive(alert, true) }
-                    .buttonStyle(.bordered).tint(.indigo).controlSize(.small)
+                    .buttonStyle(.bordered).tint(Theme.amber).controlSize(.small)
             }
             Button(role: .destructive) { alerts.remove(alert) } label: {
                 Image(systemName: "trash").foregroundStyle(.secondary)

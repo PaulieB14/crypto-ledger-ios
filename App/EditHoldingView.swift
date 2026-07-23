@@ -71,7 +71,7 @@ struct EditHoldingView: View {
             }
         }
         .frame(minWidth: 340, minHeight: 360)
-        .tint(.indigo)
+        .tint(Theme.amber)
     }
 
     private func field(_ label: String, _ text: Binding<String>, suffix: String) -> some View {

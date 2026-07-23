@@ -12,17 +12,38 @@ struct CoinMarket: Identifiable, Hashable, Sendable {
     let imageURL: URL?    // CDN logo (badge-sized)
 }
 
+/// One point on a coin's price history, for the sparkline/detail chart.
+struct PricePoint: Identifiable, Hashable, Sendable {
+    let date: Date
+    let priceUSD: Double
+    var id: Date { date }
+}
+
 /// Thin CoinGecko client. Public, free, no key — the top markets by market cap
 /// give us live prices and a searchable universe of essentially every coin a
 /// user actually holds.
 enum CoinGecko {
-    static func topMarkets(perPage: Int = 250) async -> [CoinMarket] {
+    /// Fetch the top `pages * perPage` coins by market cap (default top 1000 —
+    /// four pages fetched concurrently). Wider coverage means far fewer real
+    /// holdings fall into the "no live price" gap.
+    static func topMarkets(pages: Int = 4, perPage: Int = 250) async -> [CoinMarket] {
+        await withTaskGroup(of: [CoinMarket].self) { group in
+            for page in 1...max(1, pages) {
+                group.addTask { await marketsPage(page: page, perPage: perPage) }
+            }
+            var all: [CoinMarket] = []
+            for await chunk in group { all.append(contentsOf: chunk) }
+            return all.sorted { ($0.rank ?? .max) < ($1.rank ?? .max) }
+        }
+    }
+
+    private static func marketsPage(page: Int, perPage: Int) async -> [CoinMarket] {
         var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/markets")!
         comps.queryItems = [
             .init(name: "vs_currency", value: "usd"),
             .init(name: "order", value: "market_cap_desc"),
             .init(name: "per_page", value: String(perPage)),
-            .init(name: "page", value: "1"),
+            .init(name: "page", value: String(page)),
         ]
         guard let url = comps.url else { return [] }
         var req = URLRequest(url: url, timeoutInterval: 20)
@@ -45,6 +66,33 @@ enum CoinGecko {
                 return CoinMarket(id: id, symbol: sym.uppercased(), name: name,
                                   priceUSD: price, rank: d["market_cap_rank"] as? Int,
                                   imageURL: img.flatMap(URL.init(string:)))
+            }
+        } catch {
+            return []
+        }
+    }
+
+    /// Daily USD price history for one coin (by CoinGecko id), for the detail
+    /// chart. Returns [] on any failure so the UI can degrade gracefully.
+    static func priceHistory(coinID: String, days: Int = 30) async -> [PricePoint] {
+        var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/\(coinID)/market_chart")!
+        comps.queryItems = [
+            .init(name: "vs_currency", value: "usd"),
+            .init(name: "days", value: String(days)),
+        ]
+        guard let url = comps.url else { return [] }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("crypto-ledger", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "accept")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = (try JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let prices = obj?["prices"] as? [[Any]] ?? []
+            return prices.compactMap { pair in
+                guard pair.count == 2,
+                      let ms = (pair[0] as? NSNumber)?.doubleValue,
+                      let price = (pair[1] as? NSNumber)?.doubleValue else { return nil }
+                return PricePoint(date: Date(timeIntervalSince1970: ms / 1000), priceUSD: price)
             }
         } catch {
             return []
@@ -102,6 +150,20 @@ final class CoinCatalog {
     func imageURL(for symbol: String) -> URL? {
         let s = symbol.uppercased()
         return coins.first { $0.symbol == s }?.imageURL
+    }
+
+    /// CoinGecko id for a symbol (e.g. "BTC" -> "bitcoin"), needed to fetch that
+    /// coin's price history.
+    func coinID(for symbol: String) -> String? {
+        let s = symbol.uppercased()
+        return coins.first { $0.symbol == s }?.id
+    }
+
+    /// symbol -> CoinGecko id, for reconstructing net-worth history.
+    func coinIDMap() -> [String: String] {
+        var m: [String: String] = [:]
+        for c in coins where m[c.symbol] == nil { m[c.symbol] = c.id }
+        return m
     }
 
     /// Full coin name for a symbol (falls back to the symbol itself).

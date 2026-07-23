@@ -13,6 +13,30 @@ final class PortfolioStore {
     private(set) var state: LoadState = .idle
     private(set) var snapshot: PortfolioSnapshot?
 
+    /// Recorded daily net-worth history — the honest source for the hero chart.
+    private(set) var history: [NetWorthSnapshot] = []
+
+    /// Backfilled history reconstructed from the ledger × real price history
+    /// (session-only, never persisted; recorded snapshots override it).
+    private(set) var reconstructed: [NetWorthPoint] = []
+
+    /// Merged chart series — reconstruction fills the past, recorded snapshots
+    /// are authoritative for the days they cover.
+    var historyPoints: [NetWorthPoint] {
+        var byDay: [Date: NetWorthPoint] = [:]
+        for p in reconstructed { byDay[p.date] = p }
+        for s in history { byDay[s.date] = NetWorthPoint(date: s.date, value: s.netWorthUSD) }
+        return byDay.values.sorted { $0.date < $1.date }
+    }
+
+    /// Backfill the chart from the ledger × per-coin price history. Runs after
+    /// the catalog loads (it needs symbol→id); safe to call again.
+    func reconstructHistory(coinIDBySymbol: [String: String]) async {
+        guard !coinIDBySymbol.isEmpty else { return }
+        reconstructed = await NetWorthReconstruction.series(
+            entries: allEntries, coinIDBySymbol: coinIDBySymbol)
+    }
+
     /// Count of transactions the user has entered this session (for the UI).
     private(set) var manualCount: Int = 0
 
@@ -79,6 +103,7 @@ final class PortfolioStore {
         }
         state = .loading
         spot = initialSpot
+        history = SnapshotStore.load()
         // Restore transactions the user entered in previous sessions, and seed
         // a fallback price from each so restored holdings show a value before
         // the live price refresh lands.
@@ -204,5 +229,25 @@ final class PortfolioStore {
         let entries = allEntries
         guard !entries.isEmpty else { snapshot = nil; return }
         snapshot = PortfolioEngine(method: method).snapshot(entries: entries, spot: spot)
+        recordSnapshot()
+    }
+
+    /// Record (or update) today's net-worth snapshot — one honest point per
+    /// calendar day, kept current with the latest value seen that day.
+    private func recordSnapshot() {
+        guard let snap = snapshot else { return }
+        let nw = (snap.netWorthUSD as NSDecimalNumber).doubleValue
+        let cash = (snap.cashUSD as NSDecimalNumber).doubleValue
+        let crypto = (snap.cryptoValueUSD as NSDecimalNumber).doubleValue
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        let today = cal.startOfDay(for: Date())
+        let point = NetWorthSnapshot(date: today, netWorthUSD: nw, cashUSD: cash, cryptoUSD: crypto)
+        if let last = history.last, cal.isDate(last.date, inSameDayAs: today) {
+            history[history.count - 1] = point
+        } else {
+            history.append(point)
+        }
+        SnapshotStore.save(history)
     }
 }

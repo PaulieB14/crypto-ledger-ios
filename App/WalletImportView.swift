@@ -44,7 +44,7 @@ struct WalletImportView: View {
             }
         }
         .frame(minWidth: 360, minHeight: 480)
-        .tint(.indigo)
+        .tint(Theme.amber)
     }
 
     // MARK: Input
@@ -65,7 +65,7 @@ struct WalletImportView: View {
                     } label: {
                         Image(systemName: "doc.on.clipboard")
                     }
-                    .buttonStyle(.plain).foregroundStyle(.indigo)
+                    .buttonStyle(.plain).foregroundStyle(Theme.amber)
                     #endif
                 }
             } header: {
@@ -84,7 +84,7 @@ struct WalletImportView: View {
                         get: { chains.contains(chain) },
                         set: { on in if on { chains.insert(chain) } else { chains.remove(chain) } }
                     ))
-                    .tint(.indigo)
+                    .tint(Theme.amber)
                 }
             }
 
@@ -134,7 +134,7 @@ struct WalletImportView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isOn ? Color.indigo : Color.secondary)
+                    .foregroundStyle(isOn ? Theme.amber : Color.secondary)
                 AssetBadge(symbol: h.symbol, imageURL: catalog.imageURL(for: h.symbol))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(h.symbol).fontWeight(.semibold)

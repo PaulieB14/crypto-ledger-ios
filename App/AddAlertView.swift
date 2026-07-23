@@ -74,7 +74,7 @@ struct AddAlertView: View {
             }
         }
         .frame(minWidth: 340, minHeight: 380)
-        .tint(.indigo)
+        .tint(Theme.amber)
     }
 
     private var placeholder: String {
@@ -98,7 +98,7 @@ struct AddAlertView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .tint(.indigo)
+                .tint(Theme.amber)
             }
         }
     }
