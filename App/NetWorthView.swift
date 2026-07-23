@@ -167,7 +167,7 @@ struct NetWorthView: View {
                             }
                         }
                     }
-                    if s.cashUSD != 0 {
+                    if s.cashUSD > 0 {
                         Divider()
                         cashRow(s.cashUSD)
                     }

@@ -19,8 +19,13 @@ struct EditHoldingView: View {
         self.onSave = onSave
         self.onDelete = onDelete
         _qtyText = State(initialValue: "\(position.qty)")
-        let unit = position.qty > 0 ? position.costBasisUSD / position.qty : 0
-        _costText = State(initialValue: "\(unit)")
+        // Cost per coin is a division, which can produce a long repeating
+        // decimal — round it for display (cents for $1+ coins, more places for
+        // sub-dollar coins).
+        var unit = position.qty > 0 ? position.costBasisUSD / position.qty : 0
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &unit, unit >= 1 ? 2 : 8, .plain)
+        _costText = State(initialValue: "\(rounded)")
     }
 
     private var qty: Decimal? { Decimal(string: qtyText.trimmingCharacters(in: .whitespaces)) }

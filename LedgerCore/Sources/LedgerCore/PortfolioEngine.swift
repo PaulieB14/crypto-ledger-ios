@@ -114,7 +114,12 @@ public struct PortfolioEngine: Sendable {
             positions: positions,
             cashUSD: cash,
             cryptoValueUSD: cryptoValue,
-            netWorthUSD: cash + cryptoValue,
+            // Net worth counts crypto plus cash you actually have. Cash can go
+            // negative when a "buy" spends money that was never added as cash
+            // (a common tracker case) — that's a phantom debt, not real net
+            // worth, so it floors at zero here. Cost basis still records the
+            // full price, so gains stay correct. Raw `cashUSD` is kept as-is.
+            netWorthUSD: cryptoValue + Swift.max(0, cash),
             realized: lots.realized,
             realizedShortTermUSD: lots.realizedShortTermUSD,
             realizedLongTermUSD: lots.realizedLongTermUSD,
