@@ -57,11 +57,14 @@ struct TransactionDraft {
     var asset: String = "BTC"
     var quantityText: String = ""
     var priceText: String = ""
+    var feeText: String = ""
     var account: String = "Manual"
     var date: Date = .now
 
     var quantity: Decimal? { Decimal(string: quantityText.trimmingCharacters(in: .whitespaces)) }
     var price: Decimal? { Decimal(string: priceText.trimmingCharacters(in: .whitespaces)) }
+    /// Trading fee in USD. Blank means none.
+    var fee: Decimal { Decimal(string: feeText.trimmingCharacters(in: .whitespaces)) ?? 0 }
 
     var isValid: Bool {
         guard let q = quantity, q > 0 else { return false }
@@ -69,12 +72,31 @@ struct TransactionDraft {
         return true
     }
 
-    /// Rough USD value of this draft, for a live preview in the form.
+    /// Rough USD value of this draft, for a live preview in the form. For a buy
+    /// this is the total spent (price × qty + fee); for a sell it's what you
+    /// net after the fee.
     var estimatedUSD: Decimal? {
         switch kind {
-        case .deposit: quantity
-        case .buy, .sell, .receive, .balance:
-            if let q = quantity, let p = price { q * p } else { nil }
+        case .deposit:
+            return quantity
+        case .buy:
+            guard let q = quantity, let p = price else { return nil }
+            return q * p + fee
+        case .sell:
+            guard let q = quantity, let p = price else { return nil }
+            return q * p - fee
+        case .receive, .balance:
+            guard let q = quantity, let p = price else { return nil }
+            return q * p
+        }
+    }
+
+    /// Label for the estimate row — the number means different things per kind.
+    var estimateLabel: String {
+        switch kind {
+        case .buy: fee > 0 ? "Total cost (incl. fee)" : "Total cost"
+        case .sell: fee > 0 ? "You'll receive (after fee)" : "You'll receive"
+        default: "Estimated value"
         }
     }
 
@@ -104,11 +126,19 @@ struct TransactionDraft {
 
         switch kind {
         case .buy:
-            return [entry(asset, q, .buy, p, group: ref),
-                    entry("USD", -(q * p), .withdrawal, 1, group: ref)]
+            // A fee paid to acquire is part of what the coins cost you, so it
+            // rides in the lot's unit basis: total spent = price × qty + fee,
+            // and the same amount leaves cash.
+            let totalCost = q * p + fee
+            let unitCost = q > 0 ? totalCost / q : p
+            return [entry(asset, q, .buy, unitCost, group: ref),
+                    entry("USD", -totalCost, .withdrawal, 1, group: ref)]
         case .sell:
-            return [entry(asset, -q, .sell, p, group: ref),
-                    entry("USD", q * p, .deposit, 1, group: ref)]
+            // A fee on disposal reduces proceeds — and therefore realized gain.
+            let net = q * p - fee
+            let unitProceeds = q > 0 ? net / q : p
+            return [entry(asset, -q, .sell, unitProceeds, group: ref),
+                    entry("USD", net, .deposit, 1, group: ref)]
         case .receive:
             // Acquisition at the given cost (or zero-cost if left blank).
             return [entry(asset, q, .airdrop, price)]

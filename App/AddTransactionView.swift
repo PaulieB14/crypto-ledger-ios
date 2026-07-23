@@ -138,6 +138,8 @@ struct AddTransactionView: View {
             if draft.kind.requiresPrice {
                 decimalField(label: "Price / unit", text: $draft.priceText,
                              placeholder: "60000", suffix: "USD")
+                decimalField(label: "Fee (optional)",
+                             text: $draft.feeText, placeholder: "0", suffix: "USD")
             } else if draft.kind == .receive {
                 decimalField(label: "Cost / unit (optional)", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
@@ -163,7 +165,7 @@ struct AddTransactionView: View {
 
     private func estimateSection(_ est: Decimal) -> some View {
         Section {
-            LabeledContent("Estimated value") {
+            LabeledContent(draft.estimateLabel) {
                 Text(est, format: .currency(code: "USD"))
                     .monospacedDigit()
                     .fontWeight(.semibold)
