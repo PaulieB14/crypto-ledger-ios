@@ -7,16 +7,19 @@ struct HoldingDetailView: View {
     let position: Position
     let name: String
     let imageURL: URL?
+    var alerts: AlertStore
 
     @Environment(\.openURL) private var openURL
     @State private var news: [NewsItem] = []
     @State private var loadingNews = true
+    @State private var showingAddAlert = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 header
                 positionCard
+                alertsCard
                 newsCard
             }
             .padding(16)
@@ -28,6 +31,11 @@ struct HoldingDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $showingAddAlert) {
+            AddAlertView(assetID: position.assetID, currentPrice: position.spotUSD) { alert in
+                alerts.add(alert)
+            }
+        }
         .task {
             news = await News.fetch(query: "\(name) crypto")
             loadingNews = false
@@ -82,6 +90,73 @@ struct HoldingDetailView: View {
             Text(value).monospacedDigit()
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Price alerts
+
+    private var alertsCard: some View {
+        let list = alerts.alerts(for: position.assetID)
+        return Card(title: "Price alerts", systemImage: "bell") {
+            if list.isEmpty {
+                Text("Get a notification when \(position.assetID) hits a price you care about — even when Argus is closed.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(list.enumerated()), id: \.element.id) { i, alert in
+                        if i > 0 { Divider() }
+                        alertRow(alert)
+                    }
+                }
+            }
+
+            if alerts.permission == .denied {
+                Label("Notifications are off. Turn them on in Settings › Argus to receive alerts.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+                    .padding(.top, 2)
+            }
+
+            Button {
+                showingAddAlert = true
+            } label: {
+                Label("Add price alert", systemImage: "bell.badge")
+                    .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.indigo)
+            .padding(.top, 4)
+        }
+    }
+
+    private func alertRow(_ alert: PriceAlert) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill((alert.isActive ? Color.indigo : Color.secondary).opacity(0.14))
+                    .frame(width: 32, height: 32)
+                Image(systemName: alert.direction.icon)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(alert.isActive ? Color.indigo : Color.secondary)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(alert.direction.label) \(alert.targetUSD.formatted(.currency(code: "USD")))")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(alert.isActive ? .primary : .secondary)
+                Text(alert.isActive ? "Active" : "Triggered")
+                    .font(.caption).foregroundStyle(alert.isActive ? .green : .secondary)
+            }
+            Spacer()
+            if !alert.isActive {
+                Button("Re-arm") { alerts.setActive(alert, true) }
+                    .buttonStyle(.bordered).tint(.indigo).controlSize(.small)
+            }
+            Button(role: .destructive) { alerts.remove(alert) } label: {
+                Image(systemName: "trash").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 8)
     }
 
     private var newsCard: some View {

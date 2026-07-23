@@ -69,6 +69,16 @@ final class CoinCatalog {
         loadedOnce = !coins.isEmpty   // allow a retry if the first fetch failed
     }
 
+    /// Force a fresh price fetch — used when the app returns to the foreground
+    /// so holdings and alerts are checked against current quotes.
+    func reload() async {
+        let fresh = await CoinGecko.topMarkets()
+        if !fresh.isEmpty {
+            coins = fresh
+            loadedOnce = true
+        }
+    }
+
     func filtered(_ query: String) -> [CoinMarket] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return coins }

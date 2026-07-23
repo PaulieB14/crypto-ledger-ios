@@ -25,6 +25,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.paulbarba.cryptoledger
         DEVELOPMENT_TEAM: 3G88YKSHG7
         GENERATE_INFOPLIST_FILE: YES
+        # A partial plist for keys with no INFOPLIST_KEY_* build setting (the
+        # background-task identifiers). Xcode merges the generated keys on top.
+        INFOPLIST_FILE: App/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Argus
         # Only standard HTTPS — declares no non-exempt encryption so TestFlight

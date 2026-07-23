@@ -2,8 +2,10 @@ import SwiftUI
 import LedgerCore
 
 struct NetWorthView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var store = PortfolioStore.live()
     @State private var catalog = CoinCatalog()
+    @State private var alerts = AlertStore()
     @State private var showingBalance = false
     @State private var showingAdd = false
     @State private var showingImport = false
@@ -84,9 +86,22 @@ struct NetWorthView: View {
                 HelpView()
             }
             .task {
+                alerts.load()
                 await store.load()
                 await catalog.load()
                 store.refreshPrices(from: catalog.spotMap)
+                alerts.evaluate(spot: catalog.spotMap)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Returning to the app is a good moment to re-price and re-check
+                // alerts against the latest quotes.
+                if phase == .active {
+                    Task {
+                        await catalog.reload()
+                        store.refreshPrices(from: catalog.spotMap)
+                        alerts.evaluate(spot: catalog.spotMap)
+                    }
+                }
             }
         }
         .tint(.indigo)
@@ -126,7 +141,8 @@ struct NetWorthView: View {
                         NavigationLink {
                             HoldingDetailView(position: p,
                                               name: catalog.name(for: p.assetID),
-                                              imageURL: catalog.imageURL(for: p.assetID))
+                                              imageURL: catalog.imageURL(for: p.assetID),
+                                              alerts: alerts)
                         } label: {
                             HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
                         }
