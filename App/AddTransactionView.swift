@@ -152,7 +152,9 @@ struct AddTransactionView: View {
                 decimalField(label: "Cost / unit (optional)", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
             } else if draft.kind == .balance {
-                Text("Valued at today's live price. No purchase price needed — your gain starts from here.")
+                decimalField(label: "Cost per coin", text: $draft.priceText,
+                             placeholder: "0", suffix: "USD")
+                Text("Pre-filled with today's price — change it to what you actually paid, if you know. Leave it as-is and your gain starts from today.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

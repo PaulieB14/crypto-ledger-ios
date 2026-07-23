@@ -150,6 +150,31 @@ final class PortfolioStore {
         LedgerStore.save(manualEntries)
     }
 
+    /// Replace a holding outright — set its quantity and cost basis to new
+    /// values. Implemented by dropping the asset's manual entries (and paired
+    /// cash legs) and recording one balance fact, so editing is clean for the
+    /// common single-holding case. A holding built from many transactions is
+    /// consolidated into this one.
+    func setHolding(assetID: String, quantity: Decimal, unitCostUSD: Decimal) {
+        let sym = assetID.uppercased()
+        let groups = Set(manualEntries.filter { $0.assetID == sym }.compactMap(\.groupID))
+        manualEntries.removeAll { e in
+            e.assetID == sym || (e.groupID.map(groups.contains) ?? false)
+        }
+        if quantity > 0 {
+            var d = TransactionDraft()
+            d.kind = .balance
+            d.asset = sym
+            d.quantityText = "\(quantity)"
+            d.priceText = "\(unitCostUSD)"
+            manualEntries.append(contentsOf: d.makeEntries())
+        }
+        manualCount = manualEntries.count
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+    }
+
     /// Wipe every transaction the user entered (and any loaded sample data),
     /// back to a clean $0 slate.
     func clearAll() {

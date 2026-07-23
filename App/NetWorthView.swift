@@ -152,7 +152,8 @@ struct NetWorthView: View {
                             HoldingDetailView(position: p,
                                               name: catalog.name(for: p.assetID),
                                               imageURL: catalog.imageURL(for: p.assetID),
-                                              alerts: alerts)
+                                              alerts: alerts,
+                                              store: store)
                         } label: {
                             HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
                         }

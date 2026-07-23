@@ -8,11 +8,14 @@ struct HoldingDetailView: View {
     let name: String
     let imageURL: URL?
     var alerts: AlertStore
+    var store: PortfolioStore
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @State private var news: [NewsItem] = []
     @State private var loadingNews = true
     @State private var showingAddAlert = false
+    @State private var showingEdit = false
 
     var body: some View {
         ScrollView {
@@ -31,9 +34,25 @@ struct HoldingDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingEdit = true } label: {
+                    Label("Edit", systemImage: "slider.horizontal.3")
+                }
+            }
+        }
         .sheet(isPresented: $showingAddAlert) {
             AddAlertView(assetID: position.assetID, currentPrice: position.spotUSD) { alert in
                 alerts.add(alert)
+            }
+        }
+        .sheet(isPresented: $showingEdit) {
+            EditHoldingView(position: position) { qty, unitCost in
+                store.setHolding(assetID: position.assetID, quantity: qty, unitCostUSD: unitCost)
+                dismiss()   // pop back; the list re-renders from the new snapshot
+            } onDelete: {
+                store.removeAsset(position.assetID)
+                dismiss()
             }
         }
         .task {
