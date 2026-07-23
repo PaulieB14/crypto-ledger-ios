@@ -7,6 +7,7 @@ struct NetWorthView: View {
     @State private var catalog = CoinCatalog()
     @State private var alerts = AlertStore()
     @State private var showingBalance = false
+    @State private var showingWallet = false
     @State private var showingAdd = false
     @State private var showingImport = false
     @State private var showingHelp = false
@@ -42,6 +43,9 @@ struct NetWorthView: View {
                             Button { showingBalance = true } label: {
                                 Label("Add holding", systemImage: "chart.pie.fill")
                             }
+                            Button { showingWallet = true } label: {
+                                Label("Import from wallet", systemImage: "wallet.pass")
+                            }
                             Button { showingAdd = true } label: {
                                 Label("Add transaction", systemImage: "arrow.left.arrow.right")
                             }
@@ -67,6 +71,12 @@ struct NetWorthView: View {
             .sheet(isPresented: $showingBalance) {
                 AddTransactionView(catalog: catalog, lockedKind: .balance) { draft in
                     store.addTransaction(draft)
+                    store.refreshPrices(from: catalog.spotMap)
+                }
+            }
+            .sheet(isPresented: $showingWallet) {
+                WalletImportView(catalog: catalog) { drafts in
+                    store.addTransactions(drafts)
                     store.refreshPrices(from: catalog.spotMap)
                 }
             }
@@ -263,6 +273,8 @@ struct NetWorthView: View {
                     }
                 }
 
+                walletImportButton
+
                 VStack(spacing: 10) {
                     Button { store.loadSample() } label: {
                         Text("Preview with sample data")
@@ -282,6 +294,34 @@ struct NetWorthView: View {
             .frame(maxWidth: .infinity)
         }
         .background(backdrop)
+    }
+
+    /// The effortless version of step 1: paste an address, auto-fill holdings.
+    private var walletImportButton: some View {
+        Button {
+            showingWallet = true
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Color.indigo.opacity(0.14)).frame(width: 40, height: 40)
+                    Image(systemName: "wallet.pass").font(.headline).foregroundStyle(.indigo)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Import from a wallet").font(.headline).foregroundStyle(.primary)
+                    Text("Paste an address — Argus fills in step 1 for you, across chains.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.indigo.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     /// A single tap-to-start onboarding row. The number encodes a real
