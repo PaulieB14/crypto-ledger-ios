@@ -40,6 +40,11 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
+        # CoinGecko demo key. Empty by default so a plain checkout still builds
+        # and runs keyless; CI injects the real value
+        # (xcodebuild COINGECKO_API_KEY=…) so release builds aren't sharing the
+        # anonymous per-IP rate limit.
+        COINGECKO_API_KEY: ""
         # No signing needed for the simulator. Set your team before running on
         # a physical device.
         CODE_SIGNING_REQUIRED: NO

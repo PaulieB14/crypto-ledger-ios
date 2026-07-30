@@ -12,5 +12,10 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<!-- CoinGecko demo API key, injected at build time. Empty (or left as the
+	     unexpanded variable) means keyless requests, which share a per-IP quota
+	     and fail under load. -->
+	<key>COINGECKO_API_KEY</key>
+	<string>$(COINGECKO_API_KEY)</string>
 </dict>
 </plist>

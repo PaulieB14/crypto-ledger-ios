@@ -211,16 +211,6 @@ final class PortfolioStore {
         LedgerStore.save(manualEntries)
     }
 
-    /// Load the bundled sample portfolio for a quick look. It lives only in
-    /// memory (never persisted), so "Clear all" removes it cleanly.
-    func loadSample() {
-        guard let bundle = try? FixtureBundle.load() else { return }
-        sourceEntries = bundle.entries
-        for (asset, price) in bundle.spot where spot[asset] == nil { spot[asset] = price }
-        recompute()
-        state = .loaded
-    }
-
     private var allEntries: [LedgerEntry] {
         (sourceEntries + manualEntries).sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) }
     }

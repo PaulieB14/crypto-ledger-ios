@@ -151,14 +151,33 @@ struct WalletImportView: View {
         .buttonStyle(.plain)
     }
 
+    /// Two different failures live here and they need different words: we
+    /// couldn't reach the price service, versus the address genuinely holds
+    /// nothing we recognise. Telling someone to check their address when the
+    /// network is the problem is how an app earns a one-star review.
     private var emptyResults: some View {
         ContentUnavailableView {
-            Label("No priced coins found", systemImage: "questionmark.folder")
+            Label(catalog.coins.isEmpty ? "Couldn't load prices" : "No coins found",
+                  systemImage: catalog.coins.isEmpty ? "wifi.slash" : "questionmark.folder")
         } description: {
-            Text("We didn't find tokens with a live price at that address on the selected chains. Double-check the address, or add holdings manually.")
+            if catalog.coins.isEmpty {
+                Text(catalog.lastError?.errorDescription
+                     ?? "Argus couldn't reach the price service, so it can't value this wallet yet.")
+            } else {
+                Text("We didn't find tokens at that address on the selected chains. Double-check the address, or add holdings manually.")
+            }
         } actions: {
-            Button("Try another address") { phase = .input }
+            if catalog.coins.isEmpty {
+                Button("Try again") {
+                    Task { await catalog.retry(); scan() }
+                }
                 .buttonStyle(.borderedProminent)
+                Button("Try another address") { phase = .input }
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Try another address") { phase = .input }
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 
@@ -171,10 +190,16 @@ struct WalletImportView: View {
         Task {
             await catalog.load()   // ensure prices are available for filtering
             let found = await WalletImporter.fetch(address: addr, chains: selectedChains)
-            let withPrice = found.filter { catalog.price(for: $0.symbol) != nil }
-            priced = withPrice
-            selected = Set(withPrice.map(\.symbol))
-            phase = withPrice.isEmpty ? .empty : .results
+            // Only filter on "has a live price" when we actually have prices. If
+            // the catalog didn't load, every holding fails that test and the
+            // screen would blame the user's address for a price outage. The
+            // balances are true either way — import them and let the value fill
+            // in when prices come back.
+            let havePrices = !catalog.coins.isEmpty
+            let usable = havePrices ? found.filter { catalog.price(for: $0.symbol) != nil } : found
+            priced = usable
+            selected = Set(usable.map(\.symbol))
+            phase = usable.isEmpty ? .empty : .results
         }
     }
 

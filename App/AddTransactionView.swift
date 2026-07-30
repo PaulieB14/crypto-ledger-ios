@@ -15,12 +15,17 @@ struct AddTransactionView: View {
 
     init(catalog: CoinCatalog,
          lockedKind: TransactionDraft.Kind? = nil,
+         preselectedAsset: String? = nil,
          onSave: @escaping (TransactionDraft) -> Void) {
         self.catalog = catalog
         self.lockedKind = lockedKind
         self.onSave = onSave
         var initial = TransactionDraft()
         if let lockedKind { initial.kind = lockedKind }
+        // Opened from a tapped coin: start on that asset, not the default.
+        if let preselectedAsset, !preselectedAsset.isEmpty {
+            initial.asset = preselectedAsset.uppercased()
+        }
         // Seed the live price for the default coin so a balance holding is priced
         // from the moment the sheet opens (the catalog is usually already loaded).
         if lockedKind == .balance, let p = catalog.price(for: initial.asset), p > 0 {

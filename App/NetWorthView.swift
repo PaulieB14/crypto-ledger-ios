@@ -7,6 +7,8 @@ struct NetWorthView: View {
     @State private var catalog = CoinCatalog()
     @State private var alerts = AlertStore()
     @State private var showingBalance = false
+    /// Coin tapped in the market list, pre-filled into the "add holding" sheet.
+    @State private var pendingAsset: String?
     @State private var showingWallet = false
     @State private var showingAdd = false
     @State private var showingImport = false
@@ -68,8 +70,9 @@ struct NetWorthView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingBalance) {
-                AddTransactionView(catalog: catalog, lockedKind: .balance) { draft in
+            .sheet(isPresented: $showingBalance, onDismiss: { pendingAsset = nil }) {
+                AddTransactionView(catalog: catalog, lockedKind: .balance,
+                                   preselectedAsset: pendingAsset) { draft in
                     store.addTransaction(draft)
                     store.refreshPrices(from: catalog.spotMap)
                 }
@@ -123,6 +126,10 @@ struct NetWorthView: View {
     private func loaded(_ s: PortfolioSnapshot) -> some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Prices that failed to load are called out here rather than
+                // quietly valuing the portfolio at a stale or missing quote.
+                PriceStatusBanner(catalog: catalog)
+
                 HeroCard(snapshot: s, points: store.historyPoints)
 
                 if s.hasOpenQuestions {
@@ -277,22 +284,18 @@ struct NetWorthView: View {
 
                 walletImportButton
 
-                VStack(spacing: 10) {
-                    Button {
-                        store.loadSample()
-                        Task { await store.reconstructHistory(coinIDBySymbol: catalog.coinIDMap()) }
-                    } label: {
-                        Text("Preview with sample data")
-                            .font(.footnote.weight(.medium))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.amber)
-
-                    Text("Everything stays on your device.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                // Live market prices, with no input required. A fresh install is
+                // a working app from the first second — no sample data, nothing
+                // fabricated, just the real market.
+                MarketsCard(catalog: catalog) { coin in
+                    pendingAsset = coin.symbol
+                    showingBalance = true
                 }
-                .padding(.top, 2)
+
+                Text("Everything stays on your device.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
             .padding(20)
             .frame(maxWidth: 560)

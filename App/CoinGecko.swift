@@ -19,25 +19,100 @@ struct PricePoint: Identifiable, Hashable, Sendable {
     var id: Date { date }
 }
 
-/// Thin CoinGecko client. Public, free, no key — the top markets by market cap
-/// give us live prices and a searchable universe of essentially every coin a
-/// user actually holds.
-enum CoinGecko {
-    /// Fetch the top `pages * perPage` coins by market cap (default top 1000 —
-    /// four pages fetched concurrently). Wider coverage means far fewer real
-    /// holdings fall into the "no live price" gap.
-    static func topMarkets(pages: Int = 4, perPage: Int = 250) async -> [CoinMarket] {
-        await withTaskGroup(of: [CoinMarket].self) { group in
-            for page in 1...max(1, pages) {
-                group.addTask { await marketsPage(page: page, perPage: perPage) }
-            }
-            var all: [CoinMarket] = []
-            for await chunk in group { all.append(contentsOf: chunk) }
-            return all.sorted { ($0.rank ?? .max) < ($1.rank ?? .max) }
+/// Why a price fetch failed. Surfaced in the UI rather than swallowed: an
+/// empty coin list and a failed request look identical on screen and are very
+/// different problems — the second one is the reviewer seeing a broken app.
+enum CoinGeckoError: LocalizedError, Sendable, Equatable {
+    case rateLimited
+    case http(Int)
+    case unreachable(String)
+    case malformed
+
+    var errorDescription: String? {
+        switch self {
+        case .rateLimited:      "CoinGecko is rate-limiting requests right now."
+        case .http(let code):   "CoinGecko returned HTTP \(code)."
+        case .unreachable(let why): why
+        case .malformed:        "CoinGecko sent a response Argus couldn't read."
         }
     }
 
-    private static func marketsPage(page: Int, perPage: Int) async -> [CoinMarket] {
+    /// One short line for the in-app price banner.
+    var bannerText: String {
+        switch self {
+        case .rateLimited:  "Live prices are rate-limited right now."
+        case .unreachable:  "No connection — showing the last prices Argus had."
+        case .http, .malformed: "Live prices are unavailable right now."
+        }
+    }
+}
+
+/// Thin CoinGecko client. The top markets by market cap give us live prices and
+/// a searchable universe of essentially every coin a user actually holds.
+///
+/// Works keyless, but sends a demo API key when one is baked into the build
+/// (`COINGECKO_API_KEY`). Keyless requests share a per-IP quota, so they fail
+/// exactly when many clients behind one address hit the endpoint at once.
+enum CoinGecko {
+    private static var apiKey: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "COINGECKO_API_KEY") as? String
+        else { return nil }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unexpanded "$(COINGECKO_API_KEY)" means no key was injected.
+        return key.isEmpty || key.hasPrefix("$(") ? nil : key
+    }
+
+    private static func request(_ url: URL) -> URLRequest {
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("crypto-ledger", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "accept")
+        if let apiKey { req.setValue(apiKey, forHTTPHeaderField: "x-cg-demo-api-key") }
+        return req
+    }
+
+    /// One GET, with a single retry for the failures that are worth retrying
+    /// (rate limit, 5xx). Throws a typed error so callers can say what broke.
+    private static func fetch(_ url: URL, attempt: Int = 0) async throws -> Data {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request(url))
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 200
+            switch code {
+            case 200..<300:
+                return data
+            case 429, 500...599:
+                guard attempt < 1 else {
+                    throw code == 429 ? CoinGeckoError.rateLimited : CoinGeckoError.http(code)
+                }
+                try? await Task.sleep(for: .seconds(code == 429 ? 3 : 1))
+                return try await fetch(url, attempt: attempt + 1)
+            default:
+                throw CoinGeckoError.http(code)
+            }
+        } catch let error as CoinGeckoError {
+            throw error
+        } catch {
+            throw CoinGeckoError.unreachable(error.localizedDescription)
+        }
+    }
+
+    /// Fetch the top `pages * perPage` coins by market cap (default top 1000).
+    /// Page 1 is load-bearing — if it fails the caller gets the reason. The
+    /// deeper pages are best-effort coverage for long-tail holdings.
+    static func topMarkets(pages: Int = 4, perPage: Int = 250) async throws -> [CoinMarket] {
+        let first = try await marketsPage(page: 1, perPage: perPage)
+        guard pages > 1 else { return first }
+        let rest = await withTaskGroup(of: [CoinMarket].self) { group in
+            for page in 2...pages {
+                group.addTask { (try? await marketsPage(page: page, perPage: perPage)) ?? [] }
+            }
+            var all: [CoinMarket] = []
+            for await chunk in group { all.append(contentsOf: chunk) }
+            return all
+        }
+        return (first + rest).sorted { ($0.rank ?? .max) < ($1.rank ?? .max) }
+    }
+
+    private static func marketsPage(page: Int, perPage: Int) async throws -> [CoinMarket] {
         var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/markets")!
         comps.queryItems = [
             .init(name: "vs_currency", value: "usd"),
@@ -45,13 +120,11 @@ enum CoinGecko {
             .init(name: "per_page", value: String(perPage)),
             .init(name: "page", value: String(page)),
         ]
-        guard let url = comps.url else { return [] }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.setValue("crypto-ledger", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "accept")
+        guard let url = comps.url else { throw CoinGeckoError.malformed }
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            let raw = (try JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+            let data = try await fetch(url)
+            guard let raw = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+            else { throw CoinGeckoError.malformed }
             return raw.compactMap { d in
                 guard let id = d["id"] as? String,
                       let sym = d["symbol"] as? String,
@@ -67,13 +140,16 @@ enum CoinGecko {
                                   priceUSD: price, rank: d["market_cap_rank"] as? Int,
                                   imageURL: img.flatMap(URL.init(string:)))
             }
+        } catch let error as CoinGeckoError {
+            throw error
         } catch {
-            return []
+            throw CoinGeckoError.unreachable(error.localizedDescription)
         }
     }
 
     /// Daily USD price history for one coin (by CoinGecko id), for the detail
-    /// chart. Returns [] on any failure so the UI can degrade gracefully.
+    /// chart. Returns [] on any failure — a missing sparkline degrades to a
+    /// hidden chart, which is honest, unlike a missing price.
     static func priceHistory(coinID: String, days: Int = 30) async -> [PricePoint] {
         var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/\(coinID)/market_chart")!
         comps.queryItems = [
@@ -81,11 +157,8 @@ enum CoinGecko {
             .init(name: "days", value: String(days)),
         ]
         guard let url = comps.url else { return [] }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.setValue("crypto-ledger", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "accept")
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
+            let data = try await fetch(url)
             let obj = (try JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let prices = obj?["prices"] as? [[Any]] ?? []
             return prices.compactMap { pair in
@@ -109,21 +182,46 @@ final class CoinCatalog {
     private(set) var isLoading = false
     private(set) var loadedOnce = false
 
+    /// Why the last fetch failed, if it did. Drives the visible price banner —
+    /// prices that failed to load must never be mistaken for prices of zero.
+    private(set) var lastError: CoinGeckoError?
+
     func load() async {
-        guard !loadedOnce else { return }
-        isLoading = true
-        coins = await CoinGecko.topMarkets()
-        isLoading = false
-        loadedOnce = !coins.isEmpty   // allow a retry if the first fetch failed
+        guard !loadedOnce, !isLoading else { return }
+        await fetchCoins()
     }
 
     /// Force a fresh price fetch — used when the app returns to the foreground
-    /// so holdings and alerts are checked against current quotes.
+    /// so holdings and alerts are checked against current quotes. Keeps the
+    /// coins already on screen if the refresh fails.
     func reload() async {
-        let fresh = await CoinGecko.topMarkets()
-        if !fresh.isEmpty {
+        guard !isLoading else { return }
+        await fetchCoins()
+    }
+
+    /// Explicit user-driven retry from the price banner.
+    func retry() async {
+        loadedOnce = false
+        await fetchCoins()
+    }
+
+    /// The largest coins by market cap — the live content a brand-new install
+    /// shows before the user has entered anything at all.
+    func topCoins(_ count: Int = 8) -> [CoinMarket] { Array(coins.prefix(count)) }
+
+    private func fetchCoins() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let fresh = try await CoinGecko.topMarkets()
+            guard !fresh.isEmpty else { lastError = .malformed; return }
             coins = fresh
             loadedOnce = true
+            lastError = nil
+        } catch let error as CoinGeckoError {
+            lastError = error
+        } catch {
+            lastError = .unreachable(error.localizedDescription)
         }
     }
 
@@ -206,9 +304,15 @@ struct CoinPickerView: View {
                 if catalog.isLoading {
                     ProgressView("Loading coins…")
                 } else {
-                    ContentUnavailableView("Couldn't reach CoinGecko",
-                                           systemImage: "wifi.slash",
-                                           description: Text("Check your connection and try again — you can still type a symbol by hand."))
+                    ContentUnavailableView {
+                        Label("Couldn't load prices", systemImage: "wifi.slash")
+                    } description: {
+                        Text(catalog.lastError?.errorDescription
+                             ?? "Check your connection and try again — you can still type a symbol by hand.")
+                    } actions: {
+                        Button("Try again") { Task { await catalog.retry() } }
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             }
         }

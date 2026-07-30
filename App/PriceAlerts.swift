@@ -168,7 +168,9 @@ enum PriceAlertChecker {
         var alerts = AlertPersistence.load()
         guard alerts.contains(where: \.isActive) else { return 0 }
 
-        let markets = await CoinGecko.topMarkets()
+        // A background refresh that can't reach CoinGecko simply does nothing —
+        // iOS will hand us another opportunity shortly.
+        let markets = (try? await CoinGecko.topMarkets()) ?? []
         guard !markets.isEmpty else { return 0 }
         var spot: [String: Decimal] = [:]
         for m in markets where spot[m.symbol] == nil { spot[m.symbol] = m.priceUSD }
