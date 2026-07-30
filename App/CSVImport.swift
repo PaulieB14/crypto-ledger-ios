@@ -101,12 +101,18 @@ enum CSVImport {
         return nil
     }
 
-    static let sample = """
+    /// The header row on its own — a genuine starting point for someone typing
+    /// their own history in. Deliberately not a set of pre-filled holdings: a
+    /// one-tap path to a fabricated portfolio is indistinguishable from demo
+    /// content left in a shipped app.
+    static let headerTemplate = "date,type,asset,quantity,price,account\n"
+
+    /// Shown as read-only help so the expected shape is obvious without putting
+    /// invented transactions anywhere near the user's ledger.
+    static let formatExample = """
     date,type,asset,quantity,price,account
     2024-01-15,buy,BTC,0.25,42000,Coinbase
-    2024-02-01,buy,ETH,2,2300,Coinbase
     2024-03-10,deposit,USD,5000,,Bank
-    2024-04-01,receive,GRT,500,,Wallet
     2024-05-20,sell,BTC,0.1,66000,Coinbase
     """
 }

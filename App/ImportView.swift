@@ -23,7 +23,9 @@ struct ImportView: View {
 
                 HStack(spacing: 10) {
                     Button { showingFile = true } label: { Label("Load file…", systemImage: "doc") }
-                    Button { text = CSVImport.sample } label: { Label("Sample", systemImage: "doc.text") }
+                    Button { text = CSVImport.headerTemplate } label: {
+                        Label("Header row", systemImage: "text.line.first.and.arrowtriangle.forward")
+                    }
                     if !text.isEmpty {
                         Button(role: .destructive) { text = "" } label: { Label("Clear", systemImage: "xmark") }
                     }
@@ -31,6 +33,17 @@ struct ImportView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                DisclosureGroup("What the file should look like") {
+                    Text(CSVImport.formatExample)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 6)
+                }
+                .font(.footnote)
+                .tint(Theme.amber)
 
                 if !text.isEmpty { summary }
                 Spacer(minLength: 0)
