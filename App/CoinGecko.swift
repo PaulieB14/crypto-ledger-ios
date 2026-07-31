@@ -279,8 +279,16 @@ final class CoinCatalog {
     /// Long-tail coverage (ranks ~250–1000), fetched after the first render and
     /// merged in. Best-effort: failure here costs nothing a user would notice.
     func extendCoverage() async {
-        guard source == .coinGecko, coins.count < 600 else { return }
-        let deeper = await CoinGecko.markets(pages: 2...4)
+        guard coins.count < 600 else { return }
+        let deeper: [CoinMarket]
+        switch source {
+        case .coinGecko:
+            deeper = await CoinGecko.markets(pages: 2...4)
+        case .coinpaprika:
+            deeper = (try? await Coinpaprika.topMarkets(limit: 1000)) ?? []
+        default:
+            return          // serving cache; a top-up would not be trustworthy
+        }
         guard !deeper.isEmpty else { return }
         var seen = Set(coins.map(\.id))
         var merged = coins

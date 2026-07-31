@@ -26,8 +26,12 @@ enum PriceSource: String, Sendable, Codable {
 /// needs no key at all, so the app can always show a live market rather than an
 /// error. It carries no logo URLs; the lettered badge covers that.
 enum Coinpaprika {
-    static func topMarkets(limit: Int = 1000) async throws -> [CoinMarket] {
-        guard let url = URL(string: "https://api.coinpaprika.com/v1/tickers?quotes=USD") else {
+    /// `limit` is applied server-side: the full list is 1.6 MB, the top 250 is
+    /// 204 KB. Downloading nine-tenths of a payload to discard it is not a cost
+    /// worth passing to someone on cellular.
+    static func topMarkets(limit: Int = 250) async throws -> [CoinMarket] {
+        guard let url = URL(string:
+            "https://api.coinpaprika.com/v1/tickers?quotes=USD&limit=\(limit)") else {
             throw CoinGeckoError.malformed
         }
         var req = URLRequest(url: url, timeoutInterval: 25)
