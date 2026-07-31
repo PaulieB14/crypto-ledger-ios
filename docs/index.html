@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argus Crypto Tracker — Support</title>
+<style>
+  :root { color-scheme: light dark; --amber: #d9922b; }
+  body { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem;
+         font: 16px/1.65 -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 1.7rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.2rem; }
+  h3 { font-size: 1rem; margin-top: 1.5rem; margin-bottom: .2rem; }
+  .sub { color: #888; font-size: .95rem; margin-top: 0; }
+  a { color: var(--amber); }
+  code { background: rgba(128,128,128,.15); padding: .1em .35em; border-radius: 4px; }
+  ul { padding-left: 1.2rem; }
+  .faq p { margin-top: .2rem; }
+  footer { margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid rgba(128,128,128,.25);
+           font-size: .9rem; color: #888; }
+</style>
+</head>
+<body>
+<h1>Argus Crypto Tracker</h1>
+<p class="sub">Support &amp; help</p>
+
+<p>Argus is a crypto portfolio tracker that keeps your financial data on your
+device. No account, no sign-in, no ads, no analytics.</p>
+
+<h2>Getting started</h2>
+<p>Argus opens on live market prices, so there's nothing to set up before it's
+useful. To track what you own, there are three ways in — easiest first:</p>
+<ul>
+  <li><strong>Add a holding</strong> — tap a coin in the market list, or use
+    <strong>＋ &rarr; Add holding</strong>, and enter how much you own.</li>
+  <li><strong>Import from a wallet</strong> — paste a public address and Argus
+    fills in that address's balances across Ethereum, Base, Arbitrum, Polygon,
+    and Optimism.</li>
+  <li><strong>Import a CSV</strong> — bring a full history from an exchange.
+    Columns: <code>date, type, asset, quantity, price, account</code>.</li>
+</ul>
+
+<h2>Common questions</h2>
+<div class="faq">
+
+<h3>Do I need an account?</h3>
+<p>No. Argus has no accounts, no sign-in, and no server. Nothing to create and
+nothing to remember.</p>
+
+<h3>Where is my data stored?</h3>
+<p>Only on your device. Deleting the app deletes your portfolio. To clear it
+without deleting the app, use <strong>＋ &rarr; Clear all</strong>.</p>
+
+<h3>Does wallet import need my seed phrase or private key?</h3>
+<p>Never. Argus only accepts a <em>public</em> address and only reads public
+balances from block explorers. It cannot move funds and never asks for a key.</p>
+
+<h3>A price is missing, or my net worth looks wrong.</h3>
+<p>Prices come from CoinGecko's public API. If a request fails or is
+rate-limited, Argus shows a notice with a <strong>Retry</strong> button rather
+than pretending the value is zero. Very small or newly listed coins may not be
+in the top 1,000 by market cap and won't have a live price — you can still enter
+one by hand when adding the holding.</p>
+
+<h3>Why didn't my price alert fire the second the price moved?</h3>
+<p>Alerts are checked by a background task that iOS schedules when it sees fit
+(typically when the device is idle or charging), so they arrive shortly after a
+move rather than to the second. Argus also re-checks every time you open it. All
+alerts are evaluated on your device and delivered as local notifications.</p>
+
+<h3>My realized gains changed when I switched cost-basis method.</h3>
+<p>That's expected. FIFO, LIFO, and HIFO match sales against different purchase
+lots, which moves gains between realized and unrealized. It never changes what
+you own. Argus is a tracker, not tax software — check with a professional before
+filing anything.</p>
+
+</div>
+
+<h2>Contact</h2>
+<p>Questions, bugs, or feature requests: email
+<code>barba334@gmail.com</code>. Including your device model and iOS version
+helps.</p>
+
+<footer>
+<a href="/privacy.html">Privacy Policy</a> · Argus holds no funds, places no
+trades, and never touches your keys.
+</footer>
+</body>
+</html>
