@@ -2,8 +2,8 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// One coin from CoinGecko's market list — symbol, name, live USD price.
-struct CoinMarket: Identifiable, Hashable, Sendable {
+/// One coin from a market list — symbol, name, live USD price.
+struct CoinMarket: Identifiable, Hashable, Sendable, Codable {
     let id: String        // CoinGecko id, e.g. "bitcoin"
     let symbol: String    // "BTC"
     let name: String      // "Bitcoin"
@@ -112,6 +112,19 @@ enum CoinGecko {
         return (first + rest).sorted { ($0.rank ?? .max) < ($1.rank ?? .max) }
     }
 
+    /// Best-effort fetch of a page range — used for background coverage top-up,
+    /// where a failure is not worth reporting.
+    static func markets(pages: ClosedRange<Int>, perPage: Int = 250) async -> [CoinMarket] {
+        await withTaskGroup(of: [CoinMarket].self) { group in
+            for page in pages {
+                group.addTask { (try? await marketsPage(page: page, perPage: perPage)) ?? [] }
+            }
+            var all: [CoinMarket] = []
+            for await chunk in group { all.append(contentsOf: chunk) }
+            return all
+        }
+    }
+
     private static func marketsPage(page: Int, perPage: Int) async throws -> [CoinMarket] {
         var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/markets")!
         comps.queryItems = [
@@ -186,8 +199,19 @@ final class CoinCatalog {
     /// prices that failed to load must never be mistaken for prices of zero.
     private(set) var lastError: CoinGeckoError?
 
+    /// Which provider the prices on screen came from, and when.
+    private(set) var source: PriceSource?
+    private(set) var lastUpdated: Date?
+
+    /// Seed from the last saved list, then refresh. A launch with no network
+    /// opens on real (if stale) prices instead of an empty screen.
     func load() async {
         guard !loadedOnce, !isLoading else { return }
+        if coins.isEmpty, let cached = CoinCache.load() {
+            coins = cached.coins
+            source = .cache
+            lastUpdated = cached.savedAt
+        }
         await fetchCoins()
     }
 
@@ -209,20 +233,63 @@ final class CoinCatalog {
     /// shows before the user has entered anything at all.
     func topCoins(_ count: Int = 8) -> [CoinMarket] { Array(coins.prefix(count)) }
 
+    /// Try the good source, then the keyless one, then keep whatever is already
+    /// on screen. Only the case where all three come up empty is an error the
+    /// user needs to see.
+    ///
+    /// Launch costs ONE request, not four: 250 coins covers the market card and
+    /// essentially every coin a person actually holds. Deeper pages arrive via
+    /// `extendCoverage()` once the screen is already useful — the difference
+    /// between fitting inside an anonymous rate limit and blowing through it.
     private func fetchCoins() async {
         isLoading = true
         defer { isLoading = false }
+
         do {
-            let fresh = try await CoinGecko.topMarkets()
-            guard !fresh.isEmpty else { lastError = .malformed; return }
-            coins = fresh
-            loadedOnce = true
-            lastError = nil
+            let fresh = try await CoinGecko.topMarkets(pages: 1)
+            guard !fresh.isEmpty else { throw CoinGeckoError.malformed }
+            apply(fresh, from: .coinGecko)
+            return
         } catch let error as CoinGeckoError {
             lastError = error
         } catch {
             lastError = .unreachable(error.localizedDescription)
         }
+
+        // CoinGecko is unavailable — most often its per-IP anonymous quota.
+        if let fallback = try? await Coinpaprika.topMarkets(), !fallback.isEmpty {
+            apply(fallback, from: .coinpaprika)
+            return
+        }
+
+        // Nothing reachable. Cached prices (already on screen from `load()`) are
+        // better than a blank portfolio; the banner explains why they're stale.
+        if !coins.isEmpty, lastUpdated == nil { lastUpdated = CoinCache.load()?.savedAt }
+    }
+
+    private func apply(_ fresh: [CoinMarket], from source: PriceSource) {
+        coins = fresh
+        loadedOnce = true
+        lastError = nil
+        self.source = source
+        lastUpdated = Date()
+        CoinCache.save(fresh, source: source)
+    }
+
+    /// Long-tail coverage (ranks ~250–1000), fetched after the first render and
+    /// merged in. Best-effort: failure here costs nothing a user would notice.
+    func extendCoverage() async {
+        guard source == .coinGecko, coins.count < 600 else { return }
+        let deeper = await CoinGecko.markets(pages: 2...4)
+        guard !deeper.isEmpty else { return }
+        var seen = Set(coins.map(\.id))
+        var merged = coins
+        for coin in deeper where !seen.contains(coin.id) {
+            seen.insert(coin.id)
+            merged.append(coin)
+        }
+        coins = merged.sorted { ($0.rank ?? .max) < ($1.rank ?? .max) }
+        CoinCache.save(coins, source: .coinGecko)
     }
 
     func filtered(_ query: String) -> [CoinMarket] {

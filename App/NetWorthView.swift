@@ -105,6 +105,9 @@ struct NetWorthView: View {
                 store.refreshPrices(from: catalog.spotMap)
                 alerts.evaluate(spot: catalog.spotMap)
                 await store.reconstructHistory(coinIDBySymbol: catalog.coinIDMap())
+                // Long-tail coins load after the screen is already useful.
+                await catalog.extendCoverage()
+                store.refreshPrices(from: catalog.spotMap)
             }
             .onChange(of: scenePhase) { _, phase in
                 // Returning to the app is a good moment to re-price and re-check

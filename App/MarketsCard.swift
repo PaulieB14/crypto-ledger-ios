@@ -22,9 +22,17 @@ struct MarketsCard: View {
                         row(coin)
                     }
                 }
-                Text("Tap a coin to add it to your portfolio.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.top, 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tap a coin to add it to your portfolio.")
+                    // Say which source the numbers came from. When the app falls
+                    // back to a second provider the prices shift slightly, and
+                    // an unexplained shift reads as a bug.
+                    if let source = catalog.source, let at = catalog.lastUpdated {
+                        Text("Prices from \(source.displayName) · \(at, format: .dateTime.hour().minute())")
+                    }
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.top, 8)
             } else if catalog.isLoading {
                 HStack(spacing: 10) {
                     ProgressView()
