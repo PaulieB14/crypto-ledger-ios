@@ -44,7 +44,7 @@ struct AddAlertView: View {
                     if let p = currentPrice {
                         Text("\(assetID) is \(p.formatted(.currency(code: "USD"))) right now.")
                     } else {
-                        Text("You'll get a notification even when Argus is closed. It checks periodically in the background.")
+                        Text("Argus checks this in the background — iOS schedules those checks, so a notification arrives shortly after the move rather than the instant it happens — and again whenever you open the app.")
                     }
                 }
 

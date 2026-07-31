@@ -53,7 +53,14 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             MARKETING_VERSION=1.0 \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            COINGECKO_API_KEY="${{ secrets.COINGECKO_API_KEY }}"
+          # Fail loudly rather than shipping a build that will quietly share the
+          # anonymous per-IP rate limit — that is what makes prices vanish for
+          # reviewers and users on busy networks.
+          if [ -z "${{ secrets.COINGECKO_API_KEY }}" ]; then
+            echo "::warning::COINGECKO_API_KEY secret is not set — this build makes keyless CoinGecko requests and will be rate-limited on shared networks."
+          fi
 
       - name: Export IPA
         run: |

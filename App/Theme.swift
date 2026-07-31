@@ -1,4 +1,23 @@
 import SwiftUI
+
+/// Currency formatting for *unit prices*, which span nine orders of magnitude
+/// in this app. Two decimal places is right for a portfolio total and wrong for
+/// a coin: GRT at $0.0149 renders as "$0.01" and anything under half a cent
+/// renders as "$0.00", which looks broken and makes the position maths appear
+/// not to add up. Totals keep the plain 2dp style.
+enum PriceFormat {
+    static func fractionDigits(for price: Decimal) -> Int {
+        let p = abs((price as NSDecimalNumber).doubleValue)
+        if p == 0 { return 2 }
+        if p < 0.01 { return 6 }
+        if p < 1 { return 4 }
+        return 2
+    }
+
+    static func usd(_ price: Decimal) -> Decimal.FormatStyle.Currency {
+        .currency(code: "USD").precision(.fractionLength(fractionDigits(for: price)))
+    }
+}
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)

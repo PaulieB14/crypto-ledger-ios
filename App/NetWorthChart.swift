@@ -57,9 +57,12 @@ struct NetWorthChart: View {
 
     var body: some View {
         Group {
-            if points.count < 2 { sparsePlaceholder } else { chart }
+            if points.count < 2 {
+                sparseNote
+            } else {
+                chart.frame(minHeight: 120)
+            }
         }
-        .frame(minHeight: 120)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: points)
         .sensoryFeedback(.selection, trigger: selected?.date)
     }
@@ -155,21 +158,25 @@ struct NetWorthChart: View {
         }
     }
 
-    private var sparsePlaceholder: some View {
-        VStack(spacing: 8) {
-            if let only = points.first {
-                Chart {
-                    RuleMark(y: .value("Value", only.value))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
-                        .foregroundStyle(Theme.hairline)
-                    PointMark(x: .value("Date", only.date), y: .value("Value", only.value))
-                        .symbolSize(60).foregroundStyle(Theme.amber)
-                }
-                .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 72)
-            }
-            Text("Tracking since \(points.first?.date ?? Date(), format: .dateTime.month().day())")
-                .font(.editorial(15)).foregroundStyle(Theme.inkSecondary)
+    /// One data point is not a chart.
+    ///
+    /// Reserving chart-height space to draw a single dot on an empty field reads
+    /// as a graph that failed to load. A compact line reads as what it actually
+    /// is: an account that is one day old. Entering a balance today tells Argus
+    /// nothing about what you held last week, so there is genuinely no history to
+    /// draw yet — and inventing one would make the chart a lie.
+    private var sparseNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.footnote)
+                .foregroundStyle(Theme.amber)
+            Text("Tracking since \(points.first?.date ?? Date(), format: .dateTime.month().day()) — your chart fills in as prices move.")
+                .font(.editorial(15))
+                .foregroundStyle(Theme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 2)
     }
 }
 

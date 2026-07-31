@@ -292,7 +292,7 @@ struct CoinPickerView: View {
                         Text(coin.name).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(coin.priceUSD, format: .currency(code: "USD"))
+                    Text(coin.priceUSD, format: PriceFormat.usd(coin.priceUSD))
                         .font(.callout).monospacedDigit().foregroundStyle(.secondary)
                 }
             }

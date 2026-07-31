@@ -48,7 +48,7 @@ struct MarketsCard: View {
                     Text(coin.name).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Text(coin.priceUSD, format: .currency(code: "USD").precision(.fractionLength(coin.priceUSD < 1 ? 4 : 2)))
+                Text(coin.priceUSD, format: PriceFormat.usd(coin.priceUSD))
                     .monospacedDigit().fontWeight(.medium).foregroundStyle(.primary)
             }
             .contentShape(Rectangle())

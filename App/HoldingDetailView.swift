@@ -69,7 +69,7 @@ struct HoldingDetailView: View {
                 Text(position.assetID).font(.subheadline).foregroundStyle(.secondary)
             }
             if let price = position.spotUSD {
-                Text(price, format: .currency(code: "USD"))
+                Text(price, format: PriceFormat.usd(price))
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .monospacedDigit()
                 Text("per \(position.assetID)").font(.caption).foregroundStyle(.secondary)
@@ -117,7 +117,7 @@ struct HoldingDetailView: View {
         let list = alerts.alerts(for: position.assetID)
         return Card(title: "Price alerts", systemImage: "bell") {
             if list.isEmpty {
-                Text("Get a notification when \(position.assetID) hits a price you care about — even when Argus is closed.")
+                Text("Get a notification when \(position.assetID) hits a price you care about. Argus checks in the background — iOS decides how often — and again whenever you open it.")
                     .font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -159,7 +159,7 @@ struct HoldingDetailView: View {
                     .foregroundStyle(alert.isActive ? Theme.amber : Color.secondary)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(alert.direction.label) \(alert.targetUSD.formatted(.currency(code: "USD")))")
+                Text("\(alert.direction.label) \(alert.targetUSD.formatted(PriceFormat.usd(alert.targetUSD)))")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(alert.isActive ? .primary : .secondary)
                 Text(alert.isActive ? "Active" : "Triggered")
