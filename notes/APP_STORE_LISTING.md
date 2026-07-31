@@ -75,14 +75,12 @@ alerts — all on your device.`
 - **Secondary category:** Utilities (optional)
 - **Age rating:** 4+ (no trading, no custody, no objectionable content — it's a tracker)
 - **Price:** Free (recommended for v1) — or $0.99 if you want the "will anyone pay" signal
-- **Privacy policy URL:** ⚠️ **not yet published.** `docs/privacy.html` exists
-  only in this repo, the repo is private, and GitHub Pages is not enabled — so
-  every candidate URL 404s today. App Store Connect requires a reachable
-  privacy policy; a dead link there is both a compliance failure and a strong
-  "unfinished" signal. Publish it first (Vercel static deploy, or make the repo
-  public and turn on Pages), then paste the live URL.
-- **Support URL:** same problem — needs a real, reachable page, not the README
-  of a private repo.
+- **Privacy policy URL:** `https://paulieb14.github.io/crypto-ledger-ios/privacy.html`
+- **Support URL:** `https://paulieb14.github.io/crypto-ledger-ios/`
+
+  Both are served by GitHub Pages from `/docs` on `main` (enabled 2026-07-30).
+  Editing `docs/privacy.html` or `docs/index.html` and pushing republishes them.
+  Keep working documents out of `/docs` — everything in that folder is public.
 - **Privacy "nutrition label" answers:** Data Not Collected — no accounts, no
   analytics, no server. Note for honesty's sake: using wallet import sends the
   address you paste to public block explorers, and prices/news come from
