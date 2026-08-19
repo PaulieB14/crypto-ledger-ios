@@ -41,9 +41,15 @@ struct AddAlertView: View {
                 } header: {
                     Text("Notify me when \(assetID) \(direction.verb) my target")
                 } footer: {
-                    if let p = currentPrice {
-                        Text("\(assetID) is \(p.formatted(.currency(code: "USD"))) right now.")
-                    } else {
+                    // The background-timing disclosure must show on EVERY path.
+                    // It used to live in the `else` branch, so any coin with a
+                    // live price — i.e. every coin a user actually sets an alert
+                    // on — never saw it, and the honest "not instant" caveat was
+                    // effectively unreachable.
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let p = currentPrice {
+                            Text("\(assetID) is \(p.formatted(.currency(code: "USD"))) right now.")
+                        }
                         Text("Argus checks this in the background — iOS schedules those checks, so a notification arrives shortly after the move rather than the instant it happens — and again whenever you open the app.")
                     }
                 }

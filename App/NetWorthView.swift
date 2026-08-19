@@ -117,6 +117,11 @@ struct NetWorthView: View {
                         await catalog.reload()
                         store.refreshPrices(from: catalog.spotMap)
                         alerts.evaluate(spot: catalog.spotMap)
+                        // Belt-and-braces: the store rebuilds the series itself
+                        // whenever the ledger changes, but if the very first
+                        // catalog load failed there is no symbol→id map yet and
+                        // the chart would stay empty until a relaunch.
+                        await store.reconstructHistory(coinIDBySymbol: catalog.coinIDMap())
                     }
                 }
             }
@@ -578,7 +583,7 @@ private struct ReviewQueueView: View {
                 } header: {
                     Text("Missing purchase price")
                 } footer: {
-                    Text("These were added without a price, so they have no cost basis. Add one to see accurate gains.")
+                    Text("These were added without a price, so they have no cost basis and are left out of realized gains. To fix one, go back and use + → Add transaction on the portfolio screen to record the matching buy with its price.")
                 }
             }
 
@@ -590,7 +595,7 @@ private struct ReviewQueueView: View {
                 } header: {
                     Text("Sold more than we have on record")
                 } footer: {
-                    Text("We have no earlier purchase to draw a cost basis from for these sales. Add the buy that came before them.")
+                    Text("We have no earlier purchase to draw a cost basis from for these sales, so they are left out of realized gains. To fix one, go back and use + → Add transaction on the portfolio screen to record the buy that came before it.")
                 }
             }
 
@@ -615,7 +620,7 @@ private struct ReviewQueueView: View {
                 } header: {
                     Text("No matching account")
                 } footer: {
-                    Text("These moved in or out without a counterpart. Connect the other account, or mark them as a purchase or sale.")
+                    Text("These moved in or out without a matching entry on the other side, so Argus can't tell a transfer from a trade. To fix one, go back and use + → Add transaction on the portfolio screen to record the other side as a buy or a sell.")
                 }
             }
         }

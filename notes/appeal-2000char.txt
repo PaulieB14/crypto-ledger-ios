@@ -1,0 +1,19 @@
+Argus Crypto Tracker 1.0 (build 17) was rejected under 5.6 and made ineligible for resubmission. I am not disputing that. I went through the build as a reviewer would encounter it, found the problems that justified it, and corrected them.
+
+What was wrong with the build you saw:
+
+1. It opened on an empty form. The first screen asked for holdings before showing anything, so a reviewer who did not type in a portfolio never saw the app work.
+2. It contained fabricated data. Two taps from launch loaded invented holdings: a "Preview with sample data" button, and a "Sample" button in the CSV importer that filled the buffer with made-up trades.
+3. Price failures were invisible. Failed network calls returned empty, so a rate-limited or offline device showed a $0 portfolio with no explanation.
+4. The privacy policy URL was unreachable, and I left the App Review Information notes empty.
+
+What has changed:
+
+1. The app works with zero input. It opens on live market prices; tapping a coin opens the add-holding sheet pre-filled with that asset.
+2. Every path to fabricated data is removed. The CSV helper inserts only the column header, with the format shown as read-only help.
+3. Failures are visible and recoverable: typed errors with a Retry control, a fallback keyless price provider, and last-known prices cached on device, so a phone on a shared or rate-limited network still opens on a live market.
+4. Privacy policy and support pages are live, and the notes field now gives the concept, the business model (free, no accounts, no purchases, no ads), and a step-by-step path through the app.
+
+I also fixed copy that overstated behaviour — price alerts claimed notifications arrive "even when Argus is closed," which misstates how iOS schedules background refresh — and sub-dollar prices that rounded $0.0149 to "$0.01".
+
+The corrected build is build 18, in TestFlight now. If it can be reviewed under this record, please tell me how. If not, I would appreciate knowing the right path forward.

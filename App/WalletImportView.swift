@@ -13,6 +13,9 @@ struct WalletImportView: View {
     @State private var phase: Phase = .input
     @State private var priced: [WalletHolding] = []
     @State private var selected: Set<String> = []
+    /// Did any block explorer answer? Distinguishes an empty wallet from a
+    /// network outage so the empty state stops blaming a valid address.
+    @State private var reachedAnyChain = true
 
     private enum Phase { case input, scanning, results, empty }
 
@@ -156,18 +159,30 @@ struct WalletImportView: View {
     /// nothing we recognise. Telling someone to check their address when the
     /// network is the problem is how an app earns a one-star review.
     private var emptyResults: some View {
+        // Three cases, not two. The third — every block explorer unreachable —
+        // used to fall through to "Double-check the address", which accuses the
+        // user of a typo during a network outage.
         ContentUnavailableView {
-            Label(catalog.coins.isEmpty ? "Couldn't load prices" : "No coins found",
-                  systemImage: catalog.coins.isEmpty ? "wifi.slash" : "questionmark.folder")
+            Label(!reachedAnyChain ? "Couldn't reach the block explorers"
+                    : catalog.coins.isEmpty ? "Couldn't load prices" : "No coins found",
+                  systemImage: (!reachedAnyChain || catalog.coins.isEmpty)
+                    ? "wifi.slash" : "questionmark.folder")
         } description: {
-            if catalog.coins.isEmpty {
+            if !reachedAnyChain {
+                Text("Argus couldn't reach any of the selected block explorers, so it can't read this wallet yet. Your address is probably fine — check your connection and try again.")
+            } else if catalog.coins.isEmpty {
                 Text(catalog.lastError?.errorDescription
                      ?? "Argus couldn't reach the price service, so it can't value this wallet yet.")
             } else {
                 Text("We didn't find tokens at that address on the selected chains. Double-check the address, or add holdings manually.")
             }
         } actions: {
-            if catalog.coins.isEmpty {
+            if !reachedAnyChain {
+                Button("Try again") { scan() }
+                    .buttonStyle(.borderedProminent)
+                Button("Try another address") { phase = .input }
+                    .buttonStyle(.bordered)
+            } else if catalog.coins.isEmpty {
                 Button("Try again") {
                     Task { await catalog.retry(); scan() }
                 }
@@ -189,14 +204,15 @@ struct WalletImportView: View {
         let selectedChains = Array(chains)
         Task {
             await catalog.load()   // ensure prices are available for filtering
-            let found = await WalletImporter.fetch(address: addr, chains: selectedChains)
+            let scan = await WalletImporter.fetch(address: addr, chains: selectedChains)
+            reachedAnyChain = scan.reachedAnyChain
             // Only filter on "has a live price" when we actually have prices. If
             // the catalog didn't load, every holding fails that test and the
             // screen would blame the user's address for a price outage. The
             // balances are true either way — import them and let the value fill
             // in when prices come back.
             let havePrices = !catalog.coins.isEmpty
-            let usable = havePrices ? found.filter { catalog.price(for: $0.symbol) != nil } : found
+            let usable = havePrices ? scan.holdings.filter { catalog.price(for: $0.symbol) != nil } : scan.holdings
             priced = usable
             selected = Set(usable.map(\.symbol))
             phase = usable.isEmpty ? .empty : .results

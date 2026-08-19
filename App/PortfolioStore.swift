@@ -29,12 +29,32 @@ final class PortfolioStore {
         return byDay.values.sorted { $0.date < $1.date }
     }
 
+    /// Symbol→id map from the last reconstruction, kept so the chart can be
+    /// rebuilt when the ledger changes without waiting for the catalog again.
+    private var lastCoinIDBySymbol: [String: String] = [:]
+
     /// Backfill the chart from the ledger × per-coin price history. Runs after
     /// the catalog loads (it needs symbol→id); safe to call again.
     func reconstructHistory(coinIDBySymbol: [String: String]) async {
         guard !coinIDBySymbol.isEmpty else { return }
+        lastCoinIDBySymbol = coinIDBySymbol
         reconstructed = await NetWorthReconstruction.series(
             entries: allEntries, coinIDBySymbol: coinIDBySymbol)
+    }
+
+    /// Rebuild the chart after the ledger changes.
+    ///
+    /// Without this the only reconstruction happened in NetWorthView's `.task`,
+    /// which fires once on appear — BEFORE the user has entered anything. A
+    /// first-session user (or an App Reviewer) would add a holding and get the
+    /// "Tracking since today" one-liner instead of a chart, and only see the
+    /// real series after force-quitting and relaunching. The chart is the
+    /// feature the App Store description leads with, so an empty one on first
+    /// run reads as broken.
+    private func rebuildHistoryAfterLedgerChange() {
+        guard !lastCoinIDBySymbol.isEmpty else { return }
+        let map = lastCoinIDBySymbol
+        Task { await reconstructHistory(coinIDBySymbol: map) }
     }
 
     /// Count of transactions the user has entered this session (for the UI).
@@ -76,25 +96,15 @@ final class PortfolioStore {
         PortfolioStore(sources: [])
     }
 
-    /// Development wiring. No network, no keys, no accounts.
-    ///
-    /// A fixture that fails to load reports why instead of rendering an empty
-    /// portfolio — "no data" and "couldn't read the data" look identical on
-    /// screen and are very different problems.
-    nonisolated static func fixtures() -> PortfolioStore {
-        do {
-            let bundle = try FixtureBundle.load()
-            return PortfolioStore(
-                sources: [FixtureSource(entries: bundle.entries)],
-                spot: bundle.spot)
-        } catch {
-            return PortfolioStore(
-                sources: [],
-                initialError: "Couldn't read fixtures.json — \(error). "
-                    + "Check that LedgerCore is linked to this target and that "
-                    + "Resources/fixtures.json is in the package's copy rule.")
-        }
-    }
+    // PortfolioStore.fixtures() was deleted 2026-08-18. It built a store from
+    // LedgerCore's fixtures.json — invented holdings — and had ZERO call sites,
+    // but it was the last thing in the app target that could construct a
+    // fabricated portfolio. The App Review Board reinstated this app on a
+    // written statement that every path to fabricated data was gone; leaving a
+    // dormant constructor around made that statement narrowly untrue.
+    //
+    // fixtures.json itself stays in LedgerCore: KnownAnswerTests loads it, and
+    // it is inert data with no remaining code path in the shipped app.
 
     func load() async {
         if let initialError {
@@ -136,6 +146,7 @@ final class PortfolioStore {
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
     }
 
     /// Bulk-append transactions (e.g. a CSV import) and re-derive once.
@@ -149,6 +160,7 @@ final class PortfolioStore {
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
     }
 
     /// Merge live spot prices (e.g. from CoinGecko) and re-derive valuations.
@@ -173,6 +185,7 @@ final class PortfolioStore {
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
     }
 
     /// Replace a holding outright — set its quantity and cost basis to new
@@ -198,6 +211,7 @@ final class PortfolioStore {
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
     }
 
     /// Wipe every transaction the user entered (and any loaded sample data),
@@ -206,6 +220,7 @@ final class PortfolioStore {
         manualEntries = []
         sourceEntries = []
         manualCount = 0
+        reconstructed = []
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)

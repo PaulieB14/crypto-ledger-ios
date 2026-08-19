@@ -35,10 +35,29 @@ struct HelpView: View {
 
                     section("Your privacy") {
                         Text("Argus keeps everything on your device. There are no accounts, "
-                             + "no sign-in, and your holdings are never uploaded. Prices and "
-                             + "coin logos come from public market data.")
+                             + "no sign-in, and your holdings are never uploaded. Prices, "
+                             + "coin logos and news headlines come from public market data "
+                             + "(CoinGecko, with Coinpaprika as a fallback). Wallet import "
+                             + "sends only the public address you paste to public block "
+                             + "explorers.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
+                        // Guideline 5.1.1(i) requires the privacy policy to be reachable
+                        // from inside the app, not only from the App Store listing.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Link(destination: URL(string: "https://paulieb14.github.io/crypto-ledger-ios/privacy.html")!) {
+                                Label("Privacy policy", systemImage: "hand.raised")
+                            }
+                            Link(destination: URL(string: "https://paulieb14.github.io/crypto-ledger-ios/")!) {
+                                Label("Support", systemImage: "lifepreserver")
+                            }
+                            Link(destination: URL(string: "mailto:barba334@gmail.com")!) {
+                                Label("Contact the developer", systemImage: "envelope")
+                            }
+                        }
+                        .font(.subheadline)
+                        .padding(.top, 4)
                     }
                 }
                 .padding(20)

@@ -18,6 +18,14 @@ struct WalletHolding: Identifiable, Hashable, Sendable {
     var id: String { symbol }
 }
 
+/// Result of a wallet scan: what was found, and whether any block explorer
+/// actually answered. `holdings.isEmpty && !reachedAnyChain` is a network
+/// failure, not an empty wallet, and the UI must say so.
+struct WalletScan: Sendable {
+    let holdings: [WalletHolding]
+    let reachedAnyChain: Bool
+}
+
 /// Chains we scan, each via its public Blockscout instance. Keyless — nothing
 /// secret ships in the app.
 enum WalletChain: String, CaseIterable, Identifiable, Sendable {
@@ -67,14 +75,24 @@ enum WalletImporter {
 
     /// Fetch native + ERC-20 balances for `address` across `chains`, summed by
     /// symbol. Chains are scanned concurrently; a chain that fails is skipped.
-    static func fetch(address: String, chains: [WalletChain]) async -> [WalletHolding] {
+    ///
+    /// Returns reachability alongside the holdings. Without it the caller cannot
+    /// tell "this address holds nothing" from "every block explorer was
+    /// unreachable" — and it was telling users to double-check a perfectly valid
+    /// address whenever the network was blocked.
+    static func fetch(address: String, chains: [WalletChain]) async -> WalletScan {
         let addr = address.trimmingCharacters(in: .whitespacesAndNewlines)
         var found: [WalletToken] = []
-        await withTaskGroup(of: [WalletToken].self) { group in
+        var reachedAnyChain = false
+        await withTaskGroup(of: [WalletToken]?.self) { group in
             for chain in chains {
                 group.addTask { await tokens(address: addr, chain: chain) }
             }
-            for await list in group { found.append(contentsOf: list) }
+            for await list in group {
+                guard let list else { continue }   // nil == chain unreachable
+                reachedAnyChain = true
+                found.append(contentsOf: list)
+            }
         }
         // Sum by symbol across chains.
         var bySymbol: [String: WalletHolding] = [:]
@@ -86,14 +104,20 @@ enum WalletImporter {
                 bySymbol[t.symbol] = WalletHolding(symbol: t.symbol, name: t.name, quantity: t.quantity)
             }
         }
-        return bySymbol.values.sorted { $0.symbol < $1.symbol }
+        return WalletScan(holdings: bySymbol.values.sorted { $0.symbol < $1.symbol },
+                          reachedAnyChain: reachedAnyChain)
     }
 
-    private static func tokens(address: String, chain: WalletChain) async -> [WalletToken] {
+    /// nil means the chain could not be reached at all (DNS/TLS/timeout/HTTP
+    /// error on BOTH probes). An empty array means it answered and the address
+    /// holds nothing there — a genuinely different fact.
+    private static func tokens(address: String, chain: WalletChain) async -> [WalletToken]? {
         var result: [WalletToken] = []
+        var answered = false
 
         // ERC-20 balances.
         if let arr = await getArray("https://\(chain.host)/api/v2/addresses/\(address)/token-balances") {
+            answered = true
             for item in arr {
                 guard let token = item["token"] as? [String: Any],
                       let type = (token["type"] as? String)?.uppercased(),
@@ -112,16 +136,18 @@ enum WalletImporter {
         }
 
         // Native coin balance.
-        if let obj = await getObject("https://\(chain.host)/api/v2/addresses/\(address)"),
-           let weiStr = obj["coin_balance"] as? String,
-           let wei = Decimal(string: weiStr), wei > 0 {
-            let qty = wei / pow10(18)
-            if qty > 0 {
-                result.append(WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
-                                          quantity: qty, chain: chain.rawValue))
+        if let obj = await getObject("https://\(chain.host)/api/v2/addresses/\(address)") {
+            answered = true
+            if let weiStr = obj["coin_balance"] as? String,
+               let wei = Decimal(string: weiStr), wei > 0 {
+                let qty = wei / pow10(18)
+                if qty > 0 {
+                    result.append(WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
+                                              quantity: qty, chain: chain.rawValue))
+                }
             }
         }
-        return result
+        return answered ? result : nil
     }
 
     private static func getArray(_ urlStr: String) async -> [[String: Any]]? {
