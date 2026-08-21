@@ -16,6 +16,8 @@ struct WalletImportView: View {
     /// Did any block explorer answer? Distinguishes an empty wallet from a
     /// network outage so the empty state stops blaming a valid address.
     @State private var reachedAnyChain = true
+    /// holding.id -> USD price, resolved by contract address at scan time.
+    @State private var resolvedPrices: [String: Decimal] = [:]
 
     private enum Phase { case input, scanning, results, empty }
 
@@ -130,10 +132,10 @@ struct WalletImportView: View {
     }
 
     private func holdingRow(_ h: WalletHolding) -> some View {
-        let isOn = selected.contains(h.symbol)
-        let value = catalog.price(for: h.symbol).map { $0 * h.quantity }
+        let isOn = selected.contains(h.id)
+        let value = resolvedPrices[h.id].map { $0 * h.quantity }
         return Button {
-            if isOn { selected.remove(h.symbol) } else { selected.insert(h.symbol) }
+            if isOn { selected.remove(h.id) } else { selected.insert(h.id) }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
@@ -211,23 +213,34 @@ struct WalletImportView: View {
             // screen would blame the user's address for a price outage. The
             // balances are true either way — import them and let the value fill
             // in when prices come back.
+            // Resolve every holding by CONTRACT, not symbol. The old filter
+            // (`price(for: symbol) != nil`) looked like a quality gate and was the
+            // opposite: it SELECTED counterfeits that impersonate a listed symbol
+            // and discarded genuine but unlisted holdings.
             let havePrices = !catalog.coins.isEmpty
-            let usable = havePrices ? scan.holdings.filter { catalog.price(for: $0.symbol) != nil } : scan.holdings
+            var priceByID: [String: Decimal] = [:]
+            for h in scan.holdings {
+                if let p = await catalog.price(forContract: h.contract, chain: h.chain, nativeSymbol: h.symbol) {
+                    priceByID[h.id] = p
+                }
+            }
+            resolvedPrices = priceByID
+            let usable = havePrices ? scan.holdings.filter { priceByID[$0.id] != nil } : scan.holdings
             priced = usable
-            selected = Set(usable.map(\.symbol))
+            selected = Set(usable.map(\.id))
             phase = usable.isEmpty ? .empty : .results
         }
     }
 
     private func importSelected() {
         let drafts: [TransactionDraft] = priced
-            .filter { selected.contains($0.symbol) }
+            .filter { selected.contains($0.id) }
             .map { h in
                 var d = TransactionDraft()
                 d.kind = .balance
                 d.asset = h.symbol
                 d.quantityText = "\(h.quantity)"
-                if let p = catalog.price(for: h.symbol) { d.priceText = "\(p)" }
+                if let p = resolvedPrices[h.id] { d.priceText = "\(p)" }
                 return d
             }
         onImport(drafts)

@@ -6,7 +6,9 @@ struct WalletToken: Identifiable, Hashable, Sendable {
     let name: String
     let quantity: Decimal
     let chain: String
-    var id: String { "\(chain)-\(symbol)" }
+    /// Lowercased ERC-20 contract address, or "native" for the chain's own coin.
+    let contract: String
+    var id: String { "\(chain):\(contract)" }
 }
 
 /// A holding ready to import — the same symbol summed across every chain it was
@@ -15,7 +17,13 @@ struct WalletHolding: Identifiable, Hashable, Sendable {
     let symbol: String
     let name: String
     let quantity: Decimal
-    var id: String { symbol }
+    /// Lowercased ERC-20 contract address. THE identity of the token — symbols
+    /// are attacker-controlled and routinely impersonated.
+    let contract: String
+    /// Which chain the contract lives on; the same address means different
+    /// things on different chains.
+    let chain: String
+    var id: String { "\(chain):\(contract)" }
 }
 
 /// Result of a wallet scan: what was found, and whether any block explorer
@@ -29,7 +37,7 @@ struct WalletScan: Sendable {
 /// Chains we scan, each via its public Blockscout instance. Keyless — nothing
 /// secret ships in the app.
 enum WalletChain: String, CaseIterable, Identifiable, Sendable {
-    case ethereum, base, arbitrum, polygon, optimism
+    case ethereum, base, arbitrum, polygon, optimism, scroll, zksync, gnosis, celo, unichain, mode
 
     var id: String { rawValue }
 
@@ -40,6 +48,12 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
         case .arbitrum: "Arbitrum"
         case .polygon: "Polygon"
         case .optimism: "Optimism"
+        case .scroll: "Scroll"
+        case .zksync: "zkSync Era"
+        case .gnosis: "Gnosis"
+        case .celo: "Celo"
+        case .unichain: "Unichain"
+        case .mode: "Mode"
         }
     }
 
@@ -50,6 +64,15 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
         case .arbitrum: "arbitrum.blockscout.com"
         case .polygon: "polygon.blockscout.com"
         case .optimism: "optimism.blockscout.com"
+        // Added 2026-08-21. Each verified live via /api/v2/stats before shipping —
+        // a Blockscout host that 404s is indistinguishable from an empty wallet,
+        // so an unchecked entry would silently report "no coins found".
+        case .scroll: "scroll.blockscout.com"
+        case .zksync: "zksync.blockscout.com"
+        case .gnosis: "gnosis.blockscout.com"
+        case .celo: "celo.blockscout.com"
+        case .unichain: "unichain.blockscout.com"
+        case .mode: "explorer.mode.network"
         }
     }
 
@@ -57,7 +80,9 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
     var nativeSymbol: String {
         switch self {
         case .polygon: "POL"
-        default: "ETH"
+        case .gnosis: "XDAI"
+        case .celo: "CELO"
+        default: "ETH"   // scroll, zksync, unichain, mode are all ETH-denominated
         }
     }
 }
@@ -94,17 +119,30 @@ enum WalletImporter {
                 found.append(contentsOf: list)
             }
         }
-        // Sum by symbol across chains.
-        var bySymbol: [String: WalletHolding] = [:]
+        // SUM BY CONTRACT, NEVER BY SYMBOL.
+        //
+        // Symbols are attacker-controlled. A single mainnet address commonly holds
+        // several airdropped tokens all calling themselves "USDC" — Vitalik's
+        // wallet returns 6,687 ERC-20s, topped by junk minted at 10^59 units.
+        // Summing by symbol merged those into the real holding, and pricing by
+        // symbol then valued the counterfeit at the genuine coin's price. That is
+        // how a wallet import produced a portfolio worth more than the world
+        // economy. The contract address is the only identity that cannot be
+        // spoofed, and the same address means different things per chain, so the
+        // key is (chain, contract).
+        var byContract: [String: WalletHolding] = [:]
         for t in found {
-            if let existing = bySymbol[t.symbol] {
-                bySymbol[t.symbol] = WalletHolding(symbol: t.symbol, name: existing.name,
-                                                   quantity: existing.quantity + t.quantity)
+            let key = "\(t.chain):\(t.contract)"
+            if let existing = byContract[key] {
+                byContract[key] = WalletHolding(symbol: existing.symbol, name: existing.name,
+                                                quantity: existing.quantity + t.quantity,
+                                                contract: existing.contract, chain: existing.chain)
             } else {
-                bySymbol[t.symbol] = WalletHolding(symbol: t.symbol, name: t.name, quantity: t.quantity)
+                byContract[key] = WalletHolding(symbol: t.symbol, name: t.name, quantity: t.quantity,
+                                                contract: t.contract, chain: t.chain)
             }
         }
-        return WalletScan(holdings: bySymbol.values.sorted { $0.symbol < $1.symbol },
+        return WalletScan(holdings: byContract.values.sorted { $0.symbol < $1.symbol },
                           reachedAnyChain: reachedAnyChain)
     }
 
@@ -129,9 +167,13 @@ enum WalletImporter {
                 let decimals = Int((token["decimals"] as? String) ?? "") ?? 18
                 let qty = raw / pow10(decimals)
                 guard qty > 0 else { continue }
+                // No contract address means we cannot identify or price the token
+                // safely, so drop it rather than fall back to trusting the symbol.
+                guard let addr = (token["address"] as? String ?? token["address_hash"] as? String)?
+                        .trimmingCharacters(in: .whitespaces).lowercased(), !addr.isEmpty else { continue }
                 let name = (token["name"] as? String) ?? sym
                 result.append(WalletToken(symbol: sym.uppercased(), name: name,
-                                          quantity: qty, chain: chain.rawValue))
+                                          quantity: qty, chain: chain.rawValue, contract: addr))
             }
         }
 
@@ -143,7 +185,7 @@ enum WalletImporter {
                 let qty = wei / pow10(18)
                 if qty > 0 {
                     result.append(WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
-                                              quantity: qty, chain: chain.rawValue))
+                                              quantity: qty, chain: chain.rawValue, contract: "native"))
                 }
             }
         }

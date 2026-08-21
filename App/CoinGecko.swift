@@ -320,6 +320,22 @@ final class CoinCatalog {
         return coins.first { $0.symbol == s }?.priceUSD
     }
 
+    /// Price by CoinGecko id. Safe for wallet holdings, because the id was
+    /// resolved from the contract address rather than the (spoofable) symbol.
+    func price(forID id: String) -> Decimal? {
+        coins.first { $0.id == id }?.priceUSD
+    }
+
+    /// Price a discovered wallet holding. Returns nil — meaning "no USD value" —
+    /// for anything we cannot identify by contract, which is the correct answer
+    /// for the thousands of airdropped counterfeits a real wallet accumulates.
+    /// Never falls back to the symbol: that fallback IS the bug.
+    func price(forContract contract: String, chain: String, nativeSymbol: String?) async -> Decimal? {
+        if contract == "native", let sym = nativeSymbol { return price(for: sym) }
+        guard let id = await ContractIndex.shared.id(chain: chain, contract: contract) else { return nil }
+        return price(forID: id)
+    }
+
     func imageURL(for symbol: String) -> URL? {
         let s = symbol.uppercased()
         return coins.first { $0.symbol == s }?.imageURL
@@ -396,5 +412,68 @@ struct CoinPickerView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task { await catalog.load() }
+    }
+}
+
+/// Maps a verified contract address to a CoinGecko coin id, per chain.
+///
+/// WHY THIS EXISTS: pricing a wallet holding by SYMBOL is a security bug, not a
+/// shortcut. Token symbols are set by whoever deploys the contract, and mainnet
+/// wallets are full of airdropped counterfeits — a single address commonly holds
+/// several tokens all named "USDC". Looking up "USDC" and applying the real
+/// price to a counterfeit minted at 10^59 units produces a portfolio valuation
+/// that is not merely wrong but absurd. Only the contract address identifies a
+/// token, so that is what we price on.
+///
+/// One call to /coins/list?include_platform=true returns ~18,600 coins with
+/// their per-chain contract addresses (measured ~0.1s), which is cheap enough to
+/// do at catalog load and keep in memory.
+actor ContractIndex {
+    static let shared = ContractIndex()
+    /// "<platform>:<lowercased contract>" -> CoinGecko id
+    private var index: [String: String] = [:]
+    private var loaded = false
+
+    /// CoinGecko's platform key for each chain we scan. These strings are
+    /// CoinGecko's, not ours — do not "tidy" them.
+    static let platformKey: [String: String] = [
+        "ethereum": "ethereum",
+        "base": "base",
+        "arbitrum": "arbitrum-one",
+        "polygon": "polygon-pos",
+        "optimism": "optimistic-ethereum",
+        "scroll": "scroll",
+        "zksync": "zksync",
+        "gnosis": "xdai",
+        "celo": "celo",
+        "unichain": "unichain",
+        "mode": "mode",
+    ]
+
+    func id(chain: String, contract: String) async -> String? {
+        await loadIfNeeded()
+        guard let platform = Self.platformKey[chain] else { return nil }
+        return index["\(platform):\(contract.lowercased())"]
+    }
+
+    private func loadIfNeeded() async {
+        guard !loaded else { return }
+        loaded = true   // one attempt; a failure degrades to "no USD value", never to a wrong one
+        guard let url = URL(string: "https://api.coingecko.com/api/v3/coins/list?include_platform=true") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 25)
+        req.setValue("application/json", forHTTPHeaderField: "accept")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        var m: [String: String] = [:]
+        for c in arr {
+            guard let id = c["id"] as? String,
+                  let plats = c["platforms"] as? [String: Any] else { continue }
+            for (platform, addr) in plats {
+                guard let a = (addr as? String)?.trimmingCharacters(in: .whitespaces).lowercased(),
+                      !a.isEmpty else { continue }
+                m["\(platform):\(a)"] = id
+            }
+        }
+        index = m
     }
 }
