@@ -285,7 +285,17 @@ struct WalletImportView: View {
             for (k, h) in merged { byHoldingID[h.id] = priceByID[k] }
             skippedUnpriced = unpriced
             resolvedPrices = byHoldingID
-            let usable = havePrices ? merged.values.sorted { $0.symbol < $1.symbol } : scan.holdings
+            // Sort by USD value, biggest first. With every holding pre-selected,
+            // alphabetical order buries the positions that matter under dust —
+            // a wallet can easily return 500+ rows, and the user's job here is to
+            // glance down and uncheck what they don't want.
+            let usable = havePrices
+                ? merged.values.sorted { a, b in
+                    let av = (byHoldingID[a.id] ?? 0) * a.quantity
+                    let bv = (byHoldingID[b.id] ?? 0) * b.quantity
+                    return av == bv ? a.symbol < b.symbol : av > bv
+                  }
+                : scan.holdings
             priced = usable
             selected = Set(usable.map(\.id))
             phase = usable.isEmpty ? .empty : .results
