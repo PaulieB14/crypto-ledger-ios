@@ -21,7 +21,7 @@ jobs:
       # altool rejects it with "Invalid Pre-Release Train ... is closed"
       # (which is exactly how the 2026-08-22 upload failed). Bump this for each
       # release; CURRENT_PROJECT_VERSION (the build number) still auto-increments.
-      MARKETING_VERSION: "1.0.1"
+      MARKETING_VERSION: "1.0.2"
       PROJECT: CryptoLedger.xcodeproj
       SCHEME: CryptoLedger
       TEAM_ID: "3G88YKSHG7"
