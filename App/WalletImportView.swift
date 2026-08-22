@@ -358,7 +358,12 @@ struct WalletImportView: View {
                 : scan.holdings
             priced = usable
             selected = Set(usable.map(\.id)).union(staking.map(stakeKey))
-            phase = usable.isEmpty ? .empty : .results
+            // "Nothing found" must account for STAKED positions too. Keyed on
+            // usable alone, a wallet holding no priced tokens but a large vault
+            // deposit fell through to the empty state and never rendered the
+            // Staked section — the 27,444 ETH test address is exactly that
+            // shape, and it would have reported an empty wallet.
+            phase = (usable.isEmpty && staking.isEmpty) ? .empty : .results
         }
     }
 
