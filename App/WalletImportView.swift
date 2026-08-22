@@ -318,20 +318,28 @@ struct WalletImportView: View {
             // into a genuine holding. Anything unresolved stays separate and
             // unpriced, which is the honest outcome.
             identityReady = await ContractIndex.shared.ready()
+            // One batched round trip for every ERC-20 on the scan, before the
+            // loop, so per-holding resolution stays synchronous below.
+            let llama = await LlamaPrices.prices(for: scan.holdings)
             var merged: [String: WalletHolding] = [:]
             var priceByID: [String: Decimal] = [:]
             var unpriced = 0
             for h in scan.holdings {
                 // Identity + price, in priority order:
-                //  1. the explorer's own per-contract exchange_rate. Present only
-                //     for contracts it can match to a real market feed, so it is
-                //     simultaneously the price AND the anti-counterfeit check, and
-                //     it costs no extra request.
-                //  2. the CoinGecko catalog, for native coins (whose symbol we
+                //  1. DefiLlama, addressed by (chain, contract) and filtered on
+                //     its own confidence score. Addressing by contract means a
+                //     counterfeit cannot impersonate a real coin by borrowing its
+                //     symbol, and it prices the long tail the other two sources
+                //     miss entirely.
+                //  2. the explorer's own per-contract exchange_rate. Present only
+                //     for contracts it can match to a market feed, so it is
+                //     simultaneously a price AND an anti-counterfeit check — but
+                //     it can be thin or stale, which is why it is no longer first.
+                //  3. the CoinGecko catalog, for native coins (whose symbol we
                 //     control) and for cross-chain merging when the index loaded.
                 let coinID = await catalog.coinID(forContract: h.contract, chain: h.chain,
                                                   nativeSymbol: h.symbol)
-                let price = h.priceUSD ?? coinID.flatMap { catalog.price(forID: $0) }
+                let price = llama[h.id] ?? h.priceUSD ?? coinID.flatMap { catalog.price(forID: $0) }
                 guard let p = price else {
                     if coinID != nil { unpriced += 1 }
                     continue
