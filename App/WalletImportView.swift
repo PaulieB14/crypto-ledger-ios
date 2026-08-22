@@ -139,9 +139,19 @@ struct WalletImportView: View {
                     // token too — so it already appears in the list below. Adding
                     // both the stake and the minted token overstates the
                     // portfolio, and unlike a spam token the user cannot see it.
-                    Text(staking.contains { $0.mintedOsToken > 0 }
-                         ? "Staked assets are held in the protocol, so they don't appear as wallet tokens. Note: you have osETH minted against a position — that osETH is also listed below as a token, so counting both would double up."
-                         : "Staked assets are held in the protocol, so they don't appear as wallet tokens.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Staked assets are held in the protocol, so they don't appear as wallet tokens.")
+                        // Same caveat as a token holding, but easier to miss here:
+                        // you did not buy this at today's price, you staked it
+                        // earlier and it has been earning since. The import has no
+                        // way to know your real basis, so it uses spot and starts
+                        // your gains from zero. Editable afterwards.
+                        Text("Added at today's price, so gains start from now — tap the holding afterwards to set what you actually paid.")
+                        if staking.contains(where: { $0.mintedOsToken > 0 }) {
+                            Text("You also have osETH minted against a position. That osETH is listed below as a token, so adding both would count the same value twice.")
+                                .foregroundStyle(.orange)
+                        }
+                    }
                 }
             }
             Section {
