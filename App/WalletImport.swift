@@ -8,6 +8,12 @@ struct WalletToken: Identifiable, Hashable, Sendable {
     let chain: String
     /// Lowercased ERC-20 contract address, or "native" for the chain's own coin.
     let contract: String
+    /// USD price reported by the explorer for THIS contract, when it has one.
+    /// Blockscout only carries a rate for tokens it can match to a market feed,
+    /// so its presence doubles as the identity check: on a wallet holding 7,942
+    /// tokens, 366 had a rate — and of the two contracts calling themselves
+    /// "USDC", only the genuine one did.
+    let priceUSD: Decimal?
     var id: String { "\(chain):\(contract)" }
 }
 
@@ -23,7 +29,16 @@ struct WalletHolding: Identifiable, Hashable, Sendable {
     /// Which chain the contract lives on; the same address means different
     /// things on different chains.
     let chain: String
+    /// Explorer-reported USD price for this exact contract, if any.
+    let priceUSD: Decimal?
+    /// How many chains this holding was summed across. >1 means `chain` is just
+    /// whichever one won the merge and must NOT be shown as the location — a
+    /// merged ETH balance reading "zksync" when most of it is on mainnet is
+    /// worse than showing no chain at all.
+    var chainCount: Int = 1
     var id: String { "\(chain):\(contract)" }
+    /// What to show the user for provenance.
+    var chainLabel: String { chainCount > 1 ? "\(chainCount) chains" : chain }
 }
 
 /// Result of a wallet scan: what was found, and whether any block explorer
@@ -163,10 +178,11 @@ enum WalletImporter {
             if let existing = byContract[key] {
                 byContract[key] = WalletHolding(symbol: existing.symbol, name: existing.name,
                                                 quantity: existing.quantity + t.quantity,
-                                                contract: existing.contract, chain: existing.chain)
+                                                contract: existing.contract, chain: existing.chain,
+                                                priceUSD: existing.priceUSD ?? t.priceUSD)
             } else {
                 byContract[key] = WalletHolding(symbol: t.symbol, name: t.name, quantity: t.quantity,
-                                                contract: t.contract, chain: t.chain)
+                                                contract: t.contract, chain: t.chain, priceUSD: t.priceUSD)
             }
         }
         return WalletScan(holdings: byContract.values.sorted { $0.symbol < $1.symbol },
@@ -184,7 +200,7 @@ enum WalletImporter {
             let qty = wei / pow10(18)
             return qty > 0
                 ? [WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
-                               quantity: qty, chain: chain.rawValue, contract: "native")]
+                               quantity: qty, chain: chain.rawValue, contract: "native", priceUSD: nil)]
                 : []
         }
 
@@ -210,8 +226,13 @@ enum WalletImporter {
                 guard let addr = (token["address"] as? String ?? token["address_hash"] as? String)?
                         .trimmingCharacters(in: .whitespaces).lowercased(), !addr.isEmpty else { continue }
                 let name = (token["name"] as? String) ?? sym
+                // exchange_rate arrives as a string; absent for anything the
+                // explorer cannot match to a real market.
+                let rate = (token["exchange_rate"] as? String).flatMap { Decimal(string: $0) }
+                    ?? (token["exchange_rate"] as? Double).map { Decimal($0) }
                 result.append(WalletToken(symbol: sym.uppercased(), name: name,
-                                          quantity: qty, chain: chain.rawValue, contract: addr))
+                                          quantity: qty, chain: chain.rawValue, contract: addr,
+                                          priceUSD: rate))
             }
         }
 
@@ -223,7 +244,8 @@ enum WalletImporter {
                 let qty = wei / pow10(18)
                 if qty > 0 {
                     result.append(WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
-                                              quantity: qty, chain: chain.rawValue, contract: "native"))
+                                              quantity: qty, chain: chain.rawValue, contract: "native",
+                                              priceUSD: nil))   // natives price from the catalog by symbol
                 }
             }
         }

@@ -18,6 +18,13 @@ struct WalletImportView: View {
     @State private var reachedAnyChain = true
     /// holding.id -> USD price, resolved by contract address at scan time.
     @State private var resolvedPrices: [String: Decimal] = [:]
+    /// False when the token-identity index could not be fetched (CoinGecko
+    /// rate-limits its free tier hard). Without it only native coins can be
+    /// identified, and a wallet full of ERC-20s would otherwise look empty.
+    @State private var identityReady = true
+    /// Real, identified holdings we could not price — surfaced as a count so
+    /// nothing is dropped silently.
+    @State private var skippedUnpriced = 0
 
     private enum Phase { case input, scanning, results, empty }
 
@@ -126,7 +133,16 @@ struct WalletImportView: View {
             } header: {
                 Text("Found \(priced.count) coin\(priced.count == 1 ? "" : "s")")
             } footer: {
-                Text("Only coins with a live price are shown. Each is added at today's value, so gains start from now. Uncheck anything you don't want.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Each is added at today's value, so gains start from now. Uncheck anything you don't want.")
+                    if skippedUnpriced > 0 {
+                        Text("\(skippedUnpriced) other recognised token\(skippedUnpriced == 1 ? "" : "s") had no live price and were left out.")
+                    }
+                    if !identityReady {
+                        Text("Token identification is unavailable right now (the price service is rate-limiting), so only native coins could be matched. Try again shortly.")
+                            .foregroundStyle(.orange)
+                    }
+                }
             }
         }
     }
@@ -218,14 +234,58 @@ struct WalletImportView: View {
             // opposite: it SELECTED counterfeits that impersonate a listed symbol
             // and discarded genuine but unlisted holdings.
             let havePrices = !catalog.coins.isEmpty
+            // MERGE ON RESOLVED IDENTITY, NOT ON THE RAW CONTRACT.
+            //
+            // Keying holdings by (chain, contract) is what kills the counterfeit
+            // problem, but taken all the way to the UI it also splits assets that
+            // genuinely ARE the same thing: native ETH showed up as eight separate
+            // rows, one per L2, and real USDC on Base and Arbitrum as two. A
+            // portfolio tracker should say "ETH 10.19".
+            //
+            // The CoinGecko id is the right identity: every chain's native ETH
+            // resolves to `ethereum`, real USDC everywhere resolves to `usd-coin`,
+            // and a counterfeit resolves to nothing at all — so it can never merge
+            // into a genuine holding. Anything unresolved stays separate and
+            // unpriced, which is the honest outcome.
+            identityReady = await ContractIndex.shared.ready()
+            var merged: [String: WalletHolding] = [:]
             var priceByID: [String: Decimal] = [:]
+            var unpriced = 0
             for h in scan.holdings {
-                if let p = await catalog.price(forContract: h.contract, chain: h.chain, nativeSymbol: h.symbol) {
-                    priceByID[h.id] = p
+                // Identity + price, in priority order:
+                //  1. the explorer's own per-contract exchange_rate. Present only
+                //     for contracts it can match to a real market feed, so it is
+                //     simultaneously the price AND the anti-counterfeit check, and
+                //     it costs no extra request.
+                //  2. the CoinGecko catalog, for native coins (whose symbol we
+                //     control) and for cross-chain merging when the index loaded.
+                let coinID = await catalog.coinID(forContract: h.contract, chain: h.chain,
+                                                  nativeSymbol: h.symbol)
+                let price = h.priceUSD ?? coinID.flatMap { catalog.price(forID: $0) }
+                guard let p = price else {
+                    if coinID != nil { unpriced += 1 }
+                    continue
                 }
+                // Merge key: the CoinGecko id when known (so ETH across eight L2s
+                // is one row), otherwise the contract, which never merges.
+                let mergeKey = coinID ?? h.id
+                if let existing = merged[mergeKey] {
+                    merged[mergeKey] = WalletHolding(symbol: existing.symbol, name: existing.name,
+                                                     quantity: existing.quantity + h.quantity,
+                                                     contract: existing.contract, chain: existing.chain,
+                                                     priceUSD: existing.priceUSD ?? h.priceUSD,
+                                                     chainCount: existing.chainCount + 1)
+                } else {
+                    merged[mergeKey] = h
+                }
+                priceByID[mergeKey] = p
             }
-            resolvedPrices = priceByID
-            let usable = havePrices ? scan.holdings.filter { priceByID[$0.id] != nil } : scan.holdings
+            // Re-key prices onto the surviving holdings' ids for the row lookup.
+            var byHoldingID: [String: Decimal] = [:]
+            for (k, h) in merged { byHoldingID[h.id] = priceByID[k] }
+            skippedUnpriced = unpriced
+            resolvedPrices = byHoldingID
+            let usable = havePrices ? merged.values.sorted { $0.symbol < $1.symbol } : scan.holdings
             priced = usable
             selected = Set(usable.map(\.id))
             phase = usable.isEmpty ? .empty : .results

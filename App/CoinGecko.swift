@@ -331,9 +331,19 @@ final class CoinCatalog {
     /// for the thousands of airdropped counterfeits a real wallet accumulates.
     /// Never falls back to the symbol: that fallback IS the bug.
     func price(forContract contract: String, chain: String, nativeSymbol: String?) async -> Decimal? {
-        if contract == "native", let sym = nativeSymbol { return price(for: sym) }
-        guard let id = await ContractIndex.shared.id(chain: chain, contract: contract) else { return nil }
+        guard let id = await coinID(forContract: contract, chain: chain, nativeSymbol: nativeSymbol) else { return nil }
         return price(forID: id)
+    }
+
+    /// Resolve a wallet holding to a CoinGecko id. This is the identity used to
+    /// merge holdings across chains — native ETH on eight L2s is one asset, and
+    /// two counterfeits sharing a symbol are neither each other nor the original.
+    func coinID(forContract contract: String, chain: String, nativeSymbol: String?) async -> String? {
+        if contract == "native" {
+            guard let sym = nativeSymbol?.uppercased() else { return nil }
+            return coins.first { $0.symbol == sym }?.id
+        }
+        return await ContractIndex.shared.id(chain: chain, contract: contract)
     }
 
     func imageURL(for symbol: String) -> URL? {
@@ -432,7 +442,6 @@ actor ContractIndex {
     static let shared = ContractIndex()
     /// "<platform>:<lowercased contract>" -> CoinGecko id
     private var index: [String: String] = [:]
-    private var loaded = false
 
     /// CoinGecko's platform key for each chain we scan. These strings are
     /// CoinGecko's, not ours — do not "tidy" them.
@@ -450,20 +459,64 @@ actor ContractIndex {
         "mode": "mode",
     ]
 
+    /// True once we have a usable index (fresh fetch or cache). When false, ERC-20
+    /// holdings cannot be identified and the UI must say so rather than imply the
+    /// wallet holds nothing but its native coin.
+    private(set) var isReady = false
+    private var lastAttempt: Date?
+    /// Below this, treat the payload as truncated rather than authoritative.
+    private static let minPlausibleEntries = 5_000
+
     func id(chain: String, contract: String) async -> String? {
         await loadIfNeeded()
         guard let platform = Self.platformKey[chain] else { return nil }
         return index["\(platform):\(contract.lowercased())"]
     }
 
+    func ready() async -> Bool {
+        await loadIfNeeded()
+        return isReady
+    }
+
+    private static var cacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("tkn-contract-index.json")
+    }
+
     private func loadIfNeeded() async {
-        guard !loaded else { return }
-        loaded = true   // one attempt; a failure degrades to "no USD value", never to a wrong one
+        if isReady { return }
+
+        // Disk cache first. This map changes slowly (new listings, not new
+        // addresses for existing coins), the payload is multi-megabyte, and
+        // CoinGecko's free tier rate-limits aggressively — so refetching on every
+        // launch is both wasteful and the main way this breaks.
+        if let url = Self.cacheURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let modified = attrs[.modificationDate] as? Date,
+           Date().timeIntervalSince(modified) < 7 * 24 * 3600,
+           let data = try? Data(contentsOf: url),
+           let m = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+           m.count >= Self.minPlausibleEntries {
+            index = m
+            isReady = true
+            return
+        }
+
+        // Do NOT permanently give up on failure. The first version set a `loaded`
+        // flag BEFORE fetching, so a single 429 — which is close to guaranteed on
+        // CoinGecko's free tier — silently reduced the app to native-coins-only
+        // for the rest of the session, with no way back and nothing shown to the
+        // user. Back off and retry instead.
+        if let last = lastAttempt, Date().timeIntervalSince(last) < 60 { return }
+        lastAttempt = Date()
+
         guard let url = URL(string: "https://api.coingecko.com/api/v3/coins/list?include_platform=true") else { return }
-        var req = URLRequest(url: url, timeoutInterval: 25)
+        var req = URLRequest(url: url, timeoutInterval: 30)
         req.setValue("application/json", forHTTPHeaderField: "accept")
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return }
+        if let http = resp as? HTTPURLResponse, http.statusCode != 200 { return }   // 429 etc: retry later
+        guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+
         var m: [String: String] = [:]
         for c in arr {
             guard let id = c["id"] as? String,
@@ -474,6 +527,15 @@ actor ContractIndex {
                 m["\(platform):\(a)"] = id
             }
         }
+        // Sanity floor. A truncated or partial response that still parses would
+        // otherwise be cached for a week and starve every lookup, which is worse
+        // than having no index at all: the app would look like it is working.
+        // The real map is tens of thousands of (platform, address) pairs.
+        guard m.count >= Self.minPlausibleEntries else { return }
         index = m
+        isReady = true
+        if let url = Self.cacheURL, let out = try? JSONSerialization.data(withJSONObject: m) {
+            try? out.write(to: url, options: .atomic)
+        }
     }
 }
