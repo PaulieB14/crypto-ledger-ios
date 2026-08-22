@@ -377,6 +377,14 @@ struct WalletImportView: View {
         }
     }
 
+    /// Short label for the wallet these holdings came from, so a second wallet
+    /// imported later is distinguishable from the first.
+    private var walletAccount: String {
+        let a = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard a.count >= 10 else { return "Wallet" }
+        return "Wallet \(a.prefix(6))…\(a.suffix(4))"
+    }
+
     private func importSelected() {
         let drafts: [TransactionDraft] = priced
             .filter { selected.contains($0.id) }
@@ -384,6 +392,10 @@ struct WalletImportView: View {
                 var d = TransactionDraft()
                 d.kind = .balance
                 d.asset = h.symbol
+                // Provenance. Lots still pool per asset, but the portfolio can
+                // now say which part of your ETH is sitting in a wallet and
+                // which part is staked, instead of showing one merged number.
+                d.account = walletAccount
                 d.quantityText = "\(h.quantity)"
                 if let p = resolvedPrices[h.id] { d.priceText = "\(p)" }
                 return d
@@ -398,6 +410,7 @@ struct WalletImportView: View {
                 // asset. `exiting` is deliberately included: assets in the exit
                 // queue are still owned, just no longer earning.
                 d.asset = p.symbol
+                d.account = "\(p.protocolName) \(p.vaultName)"
                 d.quantityText = "\(p.amount)"
                 if let price = catalog.price(for: p.symbol) { d.priceText = "\(price)" }
                 return d

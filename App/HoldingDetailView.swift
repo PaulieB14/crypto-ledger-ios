@@ -82,6 +82,21 @@ struct HoldingDetailView: View {
     private var positionCard: some View {
         Card(title: "Your position", systemImage: "chart.pie") {
             statRow("Holdings", "\(position.qty.formatted(.number.precision(.significantDigits(1...8)))) \(position.assetID)")
+            // The row above is the pooled total. Staked and wallet balances are
+            // the same asset to the tax engine but not to the person holding
+            // them, so break the total back down by where it actually sits.
+            ForEach(position.byAccount) { part in
+                HStack {
+                    Text(part.accountID)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Text(part.qty.formatted(.number.precision(.significantDigits(1...8))))
+                        .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .padding(.leading, 12)
+                .padding(.vertical, 2)
+            }
             Divider()
             if let v = position.marketValueUSD {
                 statRow("Market value", v.formatted(.currency(code: "USD")))

@@ -503,6 +503,13 @@ private struct HoldingRow: View {
                 Text(position.assetID).fontWeight(.semibold)
                 Text(position.qty.formatted(.number.precision(.significantDigits(1...8))))
                     .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                // Lots pool per asset, so staked ETH and wallet ETH share one
+                // row. Without this line the merged total looks like a single
+                // wallet balance, which is the wrong story.
+                if !position.byAccount.isEmpty {
+                    Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

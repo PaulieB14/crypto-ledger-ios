@@ -1,10 +1,31 @@
 import Foundation
 
+/// One account's share of a pooled position.
+///
+/// This is *provenance*, not a per-account cost basis. Lots pool across accounts
+/// (see `LotEngine`), so this only answers "where did these units arrive from",
+/// which is what tells staked ETH apart from wallet ETH on screen.
+public struct AccountQty: Identifiable, Hashable, Sendable {
+    public let accountID: String
+    public let qty: Decimal
+    public var id: String { accountID }
+
+    /// "38.8319 StakeWise Genesis Vault" — compact enough for a caption line.
+    public var shortLabel: String {
+        "\(qty.formatted(.number.precision(.fractionLength(0...4)))) \(accountID)"
+    }
+}
+
 public struct Position: Identifiable, Hashable, Sendable {
     public let assetID: String
     public let qty: Decimal
     public let costBasisUSD: Decimal
     public let spotUSD: Decimal?
+    /// Where this position's units came from, when they came from more than one
+    /// place. Empty when everything shares one account — and also empty when the
+    /// parts stop summing to the whole, because sub-rows that do not add up to
+    /// the row above them read as a bug rather than as information.
+    public let byAccount: [AccountQty]
 
     public var id: String { assetID }
     public var marketValueUSD: Decimal? { spotUSD.map { qty * $0 } }
@@ -76,6 +97,14 @@ public struct PortfolioEngine: Sendable {
             balances[entry.assetID, default: 0] += entry.qtyDelta
         }
 
+        // Provenance is summed from the entries themselves, not from lots: lots
+        // are pooled per asset by design, so they cannot say which account a
+        // unit came from.
+        var acctQty: [String: [String: Decimal]] = [:]
+        for entry in match.entries {
+            acctQty[entry.assetID, default: [:]][entry.accountID, default: 0] += entry.qtyDelta
+        }
+
         var lotQty: [String: Decimal] = [:]
         var lotBasis: [String: Decimal] = [:]
         for lot in lots.openLots {
@@ -92,7 +121,8 @@ public struct PortfolioEngine: Sendable {
                 Position(assetID: assetID,
                          qty: qty,
                          costBasisUSD: lotBasis[assetID] ?? 0,
-                         spotUSD: price)
+                         spotUSD: price,
+                         byAccount: Self.provenance(acctQty[assetID], total: qty))
             )
         }
         positions.sort {
@@ -132,4 +162,26 @@ public struct PortfolioEngine: Sendable {
             reconciles: reconciles
         )
     }
+
+    /// Per-account provenance for one asset, or empty when showing it would mislead.
+    ///
+    /// Disposals draw from pooled lots rather than from the account the units
+    /// actually left, so after a sale the per-account parts can stop summing to
+    /// the pooled total. Rather than render a breakdown that contradicts the row
+    /// it sits under, say nothing.
+    static func provenance(_ raw: [String: Decimal]?, total: Decimal) -> [AccountQty] {
+        guard let raw else { return [] }
+        let positive = raw.filter { $0.value > 0 }
+        guard positive.count > 1 else { return [] }
+
+        let sum = positive.values.reduce(0, +)
+        guard sum > 0 else { return [] }
+        let drift = sum > total ? sum - total : total - sum
+        guard drift * 10_000 <= sum else { return [] }   // agree to within 0.01%
+
+        return positive
+            .map { AccountQty(accountID: $0.key, qty: $0.value) }
+            .sorted { $0.qty == $1.qty ? $0.accountID < $1.accountID : $0.qty > $1.qty }
+    }
+
 }
