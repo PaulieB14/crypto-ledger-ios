@@ -165,9 +165,19 @@ struct WalletImportView: View {
         }
     }
 
+    /// Selection key for a staked position. Prefixed because a vault IS a
+    /// contract, so its id could otherwise collide with a token holding's.
+    private func stakeKey(_ p: StakingPosition) -> String { "stake:" + p.id }
+
     private func stakingRow(_ p: StakingPosition) -> some View {
+        let isOn = selected.contains(stakeKey(p))
+        return Button {
+            if isOn { selected.remove(stakeKey(p)) } else { selected.insert(stakeKey(p)) }
+        } label: {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isOn ? Theme.amber : Color.secondary)
                 Text("\(p.vaultName)").fontWeight(.semibold)
                 Spacer()
                 Text(p.amount.formatted(.number.precision(.significantDigits(1...6))) + " " + p.symbol)
@@ -189,6 +199,8 @@ struct WalletImportView: View {
             }
             .font(.caption).foregroundStyle(.secondary)
         }
+        }
+        .buttonStyle(.plain)
     }
 
     private func holdingRow(_ h: WalletHolding) -> some View {
@@ -345,7 +357,7 @@ struct WalletImportView: View {
                   }
                 : scan.holdings
             priced = usable
-            selected = Set(usable.map(\.id))
+            selected = Set(usable.map(\.id)).union(staking.map(stakeKey))
             phase = usable.isEmpty ? .empty : .results
         }
     }
@@ -361,7 +373,21 @@ struct WalletImportView: View {
                 if let p = resolvedPrices[h.id] { d.priceText = "\(p)" }
                 return d
             }
-        onImport(drafts)
+        let stakeDrafts: [TransactionDraft] = staking
+            .filter { selected.contains(stakeKey($0)) }
+            .map { p in
+                var d = TransactionDraft()
+                d.kind = .balance
+                // A StakeWise vault deposit is exposure to the vault's underlying
+                // asset (ETH on mainnet, GNO on Gnosis), so it imports as that
+                // asset. `exiting` is deliberately included: assets in the exit
+                // queue are still owned, just no longer earning.
+                d.asset = p.symbol
+                d.quantityText = "\(p.amount)"
+                if let price = catalog.price(for: p.symbol) { d.priceText = "\(price)" }
+                return d
+            }
+        onImport(drafts + stakeDrafts)
         dismiss()
     }
 }
