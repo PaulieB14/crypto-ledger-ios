@@ -37,7 +37,7 @@ struct WalletScan: Sendable {
 /// Chains we scan, each via its public Blockscout instance. Keyless — nothing
 /// secret ships in the app.
 enum WalletChain: String, CaseIterable, Identifiable, Sendable {
-    case ethereum, base, arbitrum, polygon, optimism, scroll, zksync, gnosis, celo, unichain, mode
+    case ethereum, base, arbitrum, polygon, optimism, scroll, zksync, gnosis, celo, unichain, mode, plasma
 
     var id: String { rawValue }
 
@@ -54,6 +54,31 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
         case .celo: "Celo"
         case .unichain: "Unichain"
         case .mode: "Mode"
+        case .plasma: "Plasma"
+        }
+    }
+
+    /// Where balances come from. Not every chain has a keyless indexer.
+    enum Source: Sendable {
+        /// Blockscout REST: full ERC-20 enumeration plus the native coin.
+        case blockscout(host: String)
+        /// Public JSON-RPC: native coin ONLY. Listing a wallet's ERC-20s is not
+        /// something an RPC can answer — you cannot enumerate holdings without an
+        /// index — so these chains show the native balance and nothing else.
+        case rpcNativeOnly(url: String)
+    }
+
+    var source: Source {
+        switch self {
+        // Plasma has no public Blockscout. Its explorer (plasmascan.to) is
+        // Etherscan V2, and `addresstokenbalance` is a Pro endpoint on every
+        // chain, so even a paid-tier key would not give token enumeration on the
+        // free plan. The public RPC returns the same native balance the Etherscan
+        // endpoint does (verified 2026-08-21: both 1.00242 XPL for the same
+        // address), with no credential to ship. Tokens land here if a Blockscout
+        // instance ever appears.
+        case .plasma: return .rpcNativeOnly(url: "https://rpc.plasma.to")
+        default: return .blockscout(host: host)
         }
     }
 
@@ -73,6 +98,7 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
         case .celo: "celo.blockscout.com"
         case .unichain: "unichain.blockscout.com"
         case .mode: "explorer.mode.network"
+        case .plasma: ""          // no Blockscout; see `source`
         }
     }
 
@@ -82,6 +108,7 @@ enum WalletChain: String, CaseIterable, Identifiable, Sendable {
         case .polygon: "POL"
         case .gnosis: "XDAI"
         case .celo: "CELO"
+        case .plasma: "XPL"
         default: "ETH"   // scroll, zksync, unichain, mode are all ETH-denominated
         }
     }
@@ -150,6 +177,17 @@ enum WalletImporter {
     /// error on BOTH probes). An empty array means it answered and the address
     /// holds nothing there — a genuinely different fact.
     private static func tokens(address: String, chain: WalletChain) async -> [WalletToken]? {
+        // Chains without a keyless indexer: native coin only, over JSON-RPC.
+        if case let .rpcNativeOnly(url) = chain.source {
+            guard let wei = await rpcBalance(url: url, address: address) else { return nil }
+            guard wei > 0 else { return [] }   // answered, wallet is simply empty here
+            let qty = wei / pow10(18)
+            return qty > 0
+                ? [WalletToken(symbol: chain.nativeSymbol, name: chain.nativeSymbol,
+                               quantity: qty, chain: chain.rawValue, contract: "native")]
+                : []
+        }
+
         var result: [WalletToken] = []
         var answered = false
 
@@ -190,6 +228,34 @@ enum WalletImporter {
             }
         }
         return answered ? result : nil
+    }
+
+    /// eth_getBalance over a public JSON-RPC. nil = could not reach the node,
+    /// which the caller must not confuse with a zero balance.
+    private static func rpcBalance(url: String, address: String) async -> Decimal? {
+        guard let u = URL(string: url) else { return nil }
+        var req = URLRequest(url: u, timeoutInterval: 25)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "eth_getBalance",
+            "params": [address, "latest"],
+        ])
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hex = obj["result"] as? String, hex.hasPrefix("0x") else { return nil }
+        // Accumulate into Decimal, NOT UInt64. UInt64 tops out around 1.8e19 wei,
+        // i.e. ~18 coins — so anything but a dust balance would have overflowed
+        // and silently reported the wrong number, which is exactly the class of
+        // bug this whole change set exists to remove.
+        let digits = hex.dropFirst(2)
+        guard !digits.isEmpty else { return nil }
+        var wei = Decimal(0)
+        for ch in digits {
+            guard let v = ch.hexDigitValue else { return nil }
+            wei = wei * 16 + Decimal(v)
+        }
+        return wei
     }
 
     private static func getArray(_ urlStr: String) async -> [[String: Any]]? {
