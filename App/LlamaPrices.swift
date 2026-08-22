@@ -56,9 +56,10 @@ enum LlamaPrices {
         // form and look up that same form. Contracts arrive lowercased from the
         // explorer already; lowercasing again makes that a local guarantee
         // rather than an assumption about upstream.
-        var keyToHolding: [String: String] = [:]
-        for h in wanted {
-            keyToHolding["\(slug[h.chain]!):\(h.contract.lowercased())"] = h.id
+        // Built mutably, then frozen: the task group closures below are `sending`
+        // under strict concurrency, so they may only capture immutable values.
+        let keyToHolding: [String: String] = wanted.reduce(into: [:]) { map, h in
+            map["\(slug[h.chain]!):\(h.contract.lowercased())"] = h.id
         }
 
         let keys = Array(keyToHolding.keys)
@@ -69,7 +70,7 @@ enum LlamaPrices {
         var out: [String: Decimal] = [:]
         await withTaskGroup(of: [String: Decimal].self) { group in
             for batch in batches {
-                group.addTask { await fetch(batch, keyToHolding: keyToHolding) }
+                group.addTask { [keyToHolding] in await fetch(batch, keyToHolding: keyToHolding) }
             }
             for await part in group { out.merge(part) { a, _ in a } }
         }
