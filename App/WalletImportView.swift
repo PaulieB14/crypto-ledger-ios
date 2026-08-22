@@ -25,6 +25,8 @@ struct WalletImportView: View {
     /// Real, identified holdings we could not price — surfaced as a count so
     /// nothing is dropped silently.
     @State private var skippedUnpriced = 0
+    /// Staked positions, which a token-balance scan cannot see at all.
+    @State private var staking: [StakingPosition] = []
 
     private enum Phase { case input, scanning, results, empty }
 
@@ -126,6 +128,22 @@ struct WalletImportView: View {
 
     private var results: some View {
         List {
+            if !staking.isEmpty {
+                Section {
+                    ForEach(staking) { p in stakingRow(p) }
+                } header: {
+                    Text("Staked")
+                } footer: {
+                    // The double-count trap: osETH minted against a vault deposit
+                    // is a LIABILITY, and the user usually holds that osETH as a
+                    // token too — so it already appears in the list below. Adding
+                    // both the stake and the minted token overstates the
+                    // portfolio, and unlike a spam token the user cannot see it.
+                    Text(staking.contains { $0.mintedOsToken > 0 }
+                         ? "Staked assets are held in the protocol, so they don't appear as wallet tokens. Note: you have osETH minted against a position — that osETH is also listed below as a token, so counting both would double up."
+                         : "Staked assets are held in the protocol, so they don't appear as wallet tokens.")
+                }
+            }
             Section {
                 ForEach(priced) { h in
                     holdingRow(h)
@@ -144,6 +162,32 @@ struct WalletImportView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func stakingRow(_ p: StakingPosition) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("\(p.vaultName)").fontWeight(.semibold)
+                Spacer()
+                Text(p.amount.formatted(.number.precision(.significantDigits(1...6))) + " " + p.symbol)
+                    .monospacedDigit()
+            }
+            HStack(spacing: 8) {
+                Text(p.protocolName)
+                Text("·")
+                Text(String(format: "%.2f%% APY", p.apy))
+                if p.earned > 0 {
+                    Text("·")
+                    Text("earned " + p.earned.formatted(.number.precision(.significantDigits(1...4))))
+                }
+                if p.exiting > 0 {
+                    Text("·")
+                    Text("exiting " + p.exiting.formatted(.number.precision(.significantDigits(1...4))))
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -222,7 +266,11 @@ struct WalletImportView: View {
         let selectedChains = Array(chains)
         Task {
             await catalog.load()   // ensure prices are available for filtering
+            // Staked assets live in the protocol's contract, not the wallet, so
+            // the balance scan above is blind to them. Fetch both concurrently.
+            async let stakingTask = StakeWise.positions(address: addr)
             let scan = await WalletImporter.fetch(address: addr, chains: selectedChains)
+            staking = (await stakingTask) ?? []
             reachedAnyChain = scan.reachedAnyChain
             // Only filter on "has a live price" when we actually have prices. If
             // the catalog didn't load, every holding fails that test and the
