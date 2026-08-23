@@ -423,10 +423,14 @@ struct WalletImportView: View {
                 if let price = catalog.price(for: p.symbol) { d.priceText = "\(price)" }
                 return d
             }
-        // Remember the address only when a staking position was actually taken,
-        // so the launch refresh has something to re-check and nothing to do for
-        // people who never staked.
-        if !stakeDrafts.isEmpty {
+        // Remember the address whenever anything was imported from it.
+        //
+        // This used to fire only when a staking position was taken, on the
+        // reasoning that a non-staker has nothing to re-check. That was wrong:
+        // the same watchlist drives the wallet-balance refresh, so anyone who
+        // imported a plain wallet registered no address, and their balances
+        // silently never refreshed at all.
+        if !drafts.isEmpty || !stakeDrafts.isEmpty {
             HoldingsRefresh.remember(address: address)
         }
         onImport(drafts + stakeDrafts)

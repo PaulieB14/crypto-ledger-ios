@@ -44,6 +44,13 @@ enum HoldingsRefresh {
         guard !all.contains(a) else { return }
         all.append(a)
         UserDefaults.standard.set(all, forKey: addressesKey)
+        // A newly watched address has never been scanned, so clear the throttle
+        // and let the next refresh run immediately. This also covers the upgrade
+        // path: someone who imported before the watchlist existed has to import
+        // again to be registered, which double-counts their holdings — and the
+        // refresh rewrites them to the on-chain balance, undoing it. Leaving the
+        // throttle in place would leave them looking twice as rich for an hour.
+        UserDefaults.standard.removeObject(forKey: lastScanKey)
     }
 
     static var watchedAddresses: [String] {
