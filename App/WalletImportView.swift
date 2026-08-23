@@ -386,12 +386,9 @@ struct WalletImportView: View {
     }
 
     /// Short label for the wallet these holdings came from, so a second wallet
-    /// imported later is distinguishable from the first.
-    private var walletAccount: String {
-        let a = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard a.count >= 10 else { return "Wallet" }
-        return "Wallet \(a.prefix(6))…\(a.suffix(4))"
-    }
+    /// imported later is distinguishable from the first. Built by the refresh so
+    /// the two cannot drift apart — if they disagree, nothing ever reconciles.
+    private var walletAccount: String { HoldingsRefresh.walletAccount(for: address) }
 
     private func importSelected() {
         let drafts: [TransactionDraft] = priced
@@ -404,6 +401,9 @@ struct WalletImportView: View {
                 // now say which part of your ETH is sitting in a wallet and
                 // which part is staked, instead of showing one merged number.
                 d.account = walletAccount
+                // Keep the contract, or this symbol can never be repriced: the
+                // ledger stores "STLINK" and the catalog has never heard of it.
+                TokenRegistry.remember(symbol: h.symbol, chain: h.chain, contract: h.contract)
                 d.quantityText = "\(h.quantity)"
                 if let p = resolvedPrices[h.id] { d.priceText = "\(p)" }
                 return d
@@ -423,6 +423,12 @@ struct WalletImportView: View {
                 if let price = catalog.price(for: p.symbol) { d.priceText = "\(price)" }
                 return d
             }
+        // Remember the address only when a staking position was actually taken,
+        // so the launch refresh has something to re-check and nothing to do for
+        // people who never staked.
+        if !stakeDrafts.isEmpty {
+            HoldingsRefresh.remember(address: address)
+        }
         onImport(drafts + stakeDrafts)
         dismiss()
     }

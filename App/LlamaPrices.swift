@@ -51,6 +51,15 @@ enum LlamaPrices {
         // Natives are priced by symbol elsewhere and have no contract to look up.
         let wanted = holdings.filter { $0.contract != "native" && slug[$0.chain] != nil }
         guard !wanted.isEmpty else { return [:] }
+        return await prices(pairs: wanted.map { (chain: $0.chain, contract: $0.contract, id: $0.id) })
+    }
+
+    /// Same lookup for callers that hold a contract but not a `WalletHolding` —
+    /// notably the launch price refresh, which works from the stored registry.
+    /// `id` is whatever key the caller wants its answers back under.
+    static func prices(pairs: [(chain: String, contract: String, id: String)]) async -> [String: Decimal] {
+        let wanted = pairs.filter { $0.contract != "native" && slug[$0.chain] != nil }
+        guard !wanted.isEmpty else { return [:] }
 
         // The API echoes each key back exactly as sent, so send one canonical
         // form and look up that same form. Contracts arrive lowercased from the
@@ -107,5 +116,54 @@ enum LlamaPrices {
             out[holdingID] = dec
         }
         return out
+    }
+}
+
+/// Remembers which contract backs each imported symbol, so held tokens can be
+/// repriced later.
+///
+/// WHY THE LEDGER CANNOT ANSWER THIS
+/// Entries are keyed by symbol ("STLINK"), which is all the tax maths needs and
+/// not enough to price anything the CoinGecko catalog is missing. That catalog
+/// is the top 1000 by market cap, so it prices ETH forever and stLINK never —
+/// leaving stLINK stuck at whatever it was worth on import day, drifting further
+/// from the truth with every price move. Keeping the contract alongside the
+/// symbol is what makes a live reprice possible at all.
+enum TokenRegistry {
+    private static let key = "argus.tokens.contracts"
+
+    /// symbol -> "chain:contract"
+    private static var stored: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+
+    static func remember(symbol: String, chain: String, contract: String) {
+        guard contract != "native", !symbol.isEmpty else { return }
+        var all = stored
+        all[symbol.uppercased()] = "\(chain):\(contract.lowercased())"
+        stored = all
+    }
+
+    static func forget(symbol: String) {
+        var all = stored
+        all[symbol.uppercased()] = nil
+        stored = all
+    }
+
+    /// Fresh USD prices for every registered symbol, ready to merge into `spot`.
+    ///
+    /// Deliberately returns only what DefiLlama answered confidently — a symbol
+    /// that drops out keeps whatever price it already had rather than falling to
+    /// zero and wiping value off the screen.
+    static func spotMap() async -> [String: Decimal] {
+        let all = stored
+        guard !all.isEmpty else { return [:] }
+        let pairs: [(chain: String, contract: String, id: String)] = all.compactMap { symbol, location in
+            let parts = location.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+            return (chain: parts[0], contract: parts[1], id: symbol)
+        }
+        return await LlamaPrices.prices(pairs: pairs)
     }
 }

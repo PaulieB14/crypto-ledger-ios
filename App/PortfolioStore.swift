@@ -71,6 +71,8 @@ final class PortfolioStore {
     /// as the user adds assets. A plain `[:]` default means the `nonisolated`
     /// init never touches this main-actor-isolated property.
     private var spot: [String: Decimal] = [:]
+    /// Positions the launch refresh moved, for a one-line note in the UI.
+    private(set) var holdingUpdates: [String] = []
 
     private let initialSpot: [String: Decimal]
     private let aggregator: SourceAggregator
@@ -161,6 +163,49 @@ final class PortfolioStore {
         state = .loaded
         LedgerStore.save(manualEntries)
         rebuildHistoryAfterLedgerChange()
+    }
+
+    /// Bring imported positions up to date: staked amounts, wallet balances, and
+    /// prices for tokens the CoinGecko catalog cannot see.
+    ///
+    /// Deliberately runs after `load()` has already rendered. A vault query is
+    /// quick but a token scan crosses twelve explorers, and none of it should sit
+    /// between the user and their portfolio. Everything here degrades to "leave
+    /// the stored numbers alone" rather than to zero.
+    func refreshHoldings() async {
+        var updates: [String] = []
+
+        let staked = await HoldingsRefresh.reconcile(entries: manualEntries)
+        if !staked.isEmpty {
+            manualEntries = staked.entries
+            updates += staked.changed.map(Self.describe)
+        }
+
+        let wallet = await HoldingsRefresh.reconcileWallet(entries: manualEntries)
+        if !wallet.isEmpty {
+            manualEntries = wallet.entries
+            updates += wallet.changed.map(Self.describe)
+        }
+
+        // Prices for the long tail. Merged on top of the catalog rather than
+        // under it, because a contract-addressed quote beats a symbol match.
+        let contractPrices = await TokenRegistry.spotMap()
+        for (symbol, price) in contractPrices where price > 0 { spot[symbol] = price }
+
+        guard !updates.isEmpty || !contractPrices.isEmpty else { return }
+        if !updates.isEmpty {
+            manualCount = manualEntries.count
+            holdingUpdates = updates
+            LedgerStore.save(manualEntries)
+            rebuildHistoryAfterLedgerChange()
+        }
+        recompute()
+        state = .loaded
+    }
+
+    private static func describe(_ c: (account: String, from: Decimal, to: Decimal)) -> String {
+        let f = { (d: Decimal) in d.formatted(.number.precision(.fractionLength(0...6))) }
+        return "\(c.account): \(f(c.from)) → \(f(c.to))"
     }
 
     /// Merge live spot prices (e.g. from CoinGecko) and re-derive valuations.

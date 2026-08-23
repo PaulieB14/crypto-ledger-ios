@@ -108,6 +108,10 @@ struct NetWorthView: View {
                 // Long-tail coins load after the screen is already useful.
                 await catalog.extendCoverage()
                 store.refreshPrices(from: catalog.spotMap)
+                // Staked amounts, wallet balances, and prices for tokens the
+                // catalog cannot see. Last, because it is the slowest and the
+                // screen is already correct without it.
+                await store.refreshHoldings()
             }
             .onChange(of: scenePhase) { _, phase in
                 // Returning to the app is a good moment to re-price and re-check
@@ -117,6 +121,8 @@ struct NetWorthView: View {
                         await catalog.reload()
                         store.refreshPrices(from: catalog.spotMap)
                         alerts.evaluate(spot: catalog.spotMap)
+                        // Vaults kept earning while the app was backgrounded.
+                        await store.refreshHoldings()
                         // Belt-and-braces: the store rebuilds the series itself
                         // whenever the ledger changes, but if the very first
                         // catalog load failed there is no symbol→id map yet and
