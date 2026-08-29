@@ -160,10 +160,49 @@ enum CoinGecko {
         }
     }
 
-    /// Daily USD price history for one coin (by CoinGecko id), for the detail
-    /// chart. Returns [] on any failure — a missing sparkline degrades to a
-    /// hidden chart, which is honest, unlike a missing price.
+    /// In-memory cache for price history, keyed by coin and window.
+    ///
+    /// The detail chart refetches every time you open a holding or switch
+    /// range, and CoinGecko's free tier rate-limits hard enough that a burst
+    /// has previously taken out unrelated pricing. Flicking 7/30/90 on three
+    /// coins is nine calls without this. The finest granularity on offer is
+    /// hourly, so a few minutes of staleness cannot change what is drawn.
+    private actor HistoryCache {
+        static let shared = HistoryCache()
+        private var entries: [String: (at: Date, points: [PricePoint])] = [:]
+        private let ttl: TimeInterval = 15 * 60
+
+        func cached(_ key: String) -> [PricePoint]? {
+            guard let e = entries[key], Date().timeIntervalSince(e.at) < ttl else { return nil }
+            return e.points
+        }
+        func store(_ key: String, _ points: [PricePoint]) {
+            // Never cache a failure — an empty result is usually a rate-limit
+            // or a blip, and caching it would hide the chart for 15 minutes.
+            guard !points.isEmpty else { return }
+            entries[key] = (Date(), points)
+        }
+    }
+
+    /// USD price history for one coin (by CoinGecko id), for the detail chart.
+    ///
+    /// Granularity is CoinGecko's choice, not ours, and it is NOT daily below
+    /// 90 days despite what the old comment here claimed: 7d returns ~169
+    /// points and 90d ~2,161, i.e. hourly. Callers that draw this should thin
+    /// it (see HoldingDetailView.chartPoints); callers that bucket by day
+    /// (NetWorthReconstruction) are unaffected since they fold by start-of-day.
+    ///
+    /// Returns [] on any failure — a missing sparkline degrades to a hidden
+    /// chart, which is honest, unlike a missing price.
     static func priceHistory(coinID: String, days: Int = 30) async -> [PricePoint] {
+        let key = "\(coinID)#\(days)"
+        if let hit = await HistoryCache.shared.cached(key) { return hit }
+        let fetched = await fetchPriceHistory(coinID: coinID, days: days)
+        await HistoryCache.shared.store(key, fetched)
+        return fetched
+    }
+
+    private static func fetchPriceHistory(coinID: String, days: Int) async -> [PricePoint] {
         var comps = URLComponents(string: "https://api.coingecko.com/api/v3/coins/\(coinID)/market_chart")!
         comps.queryItems = [
             .init(name: "vs_currency", value: "usd"),

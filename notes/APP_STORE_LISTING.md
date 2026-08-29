@@ -14,7 +14,7 @@ Product Page. Character limits noted; all fields below are within them.
 *Alternates:* `Your net worth, on device` · `Crypto net worth, privately`
 
 ## Promotional Text (≤170, editable anytime without review)
-`A private crypto tracker with a live net-worth chart, wallet import across 5 chains, cost-basis math, and price alerts — no account, all on your device.`
+`A private crypto tracker with a live net-worth chart, wallet import across 12 chains, cost-basis math, and price alerts — no account, all on your device.`
 
 ## Keywords (≤100, comma-separated, no spaces after commas)
 `portfolio,bitcoin,ethereum,wallet,networth,cost basis,price alert,holdings,defi,coin,gains,ledger`
@@ -46,8 +46,8 @@ Log buys and sells with fees, and Argus tracks your true cost basis and
 realized gains — switch between FIFO, LIFO, and HIFO to see how it changes.
 
 **Prices, charts, and news for every coin**
-Live prices and logos for 1,000+ coins, a price chart on each holding, and
-per-coin news headlines.
+Live prices and logos, a price chart on each holding, and per-coin news
+headlines.
 
 **Price alerts**
 Set a target on any coin and Argus notifies you when it's crossed. Alerts are

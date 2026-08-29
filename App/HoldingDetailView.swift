@@ -7,6 +7,10 @@ struct HoldingDetailView: View {
     let position: Position
     let name: String
     let imageURL: URL?
+    /// CoinGecko id for this coin, when the catalogue knows one. Nil for
+    /// anything the catalogue could not resolve (an imported token with no
+    /// market feed), in which case the price chart is simply not shown.
+    var coinID: String?
     var alerts: AlertStore
     var store: PortfolioStore
 
@@ -16,11 +20,29 @@ struct HoldingDetailView: View {
     @State private var loadingNews = true
     @State private var showingAddAlert = false
     @State private var showingEdit = false
+    @State private var history: [PricePoint] = []
+    @State private var loadingHistory = false
+    @State private var range: PriceRange = .month
+
+    /// Windows offered under the price chart. CoinGecko returns daily points
+    /// for all of these on the free tier.
+    enum PriceRange: Int, CaseIterable, Identifiable {
+        case week = 7, month = 30, quarter = 90
+        var id: Int { rawValue }
+        var label: String {
+            switch self {
+            case .week: "1W"
+            case .month: "1M"
+            case .quarter: "3M"
+            }
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 header
+                priceCard
                 positionCard
                 alertsCard
                 newsCard
@@ -77,6 +99,67 @@ struct HoldingDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
+    }
+
+    /// Price history for this coin.
+    ///
+    /// Reuses NetWorthChart rather than drawing a second chart: the two show
+    /// the same shape of thing, and a portfolio app with two different-looking
+    /// line charts reads as two different apps. PricePoint and NetWorthPoint
+    /// are both (date, value), so the mapping is the whole adapter.
+    ///
+    /// Hidden entirely when there is no history — for a coin the catalogue
+    /// cannot resolve, or when CoinGecko is rate-limiting. An empty frame that
+    /// says "chart unavailable" is worse than a screen that never promised one.
+    @ViewBuilder
+    private var priceCard: some View {
+        if coinID != nil, loadingHistory || history.count >= 2 {
+            Card(title: "Price", systemImage: "chart.xyaxis.line") {
+                Picker("Range", selection: $range) {
+                    ForEach(PriceRange.allCases) { r in Text(r.label).tag(r) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 4)
+
+                if history.count >= 2 {
+                    NetWorthChart(points: chartPoints)
+                    .frame(height: 148)
+                    Text("\(range.label) · CoinGecko")
+                        .font(.system(size: 11)).foregroundStyle(Theme.inkSecondary)
+                } else {
+                    // Reserve the chart's height so switching range does not
+                    // make the cards below jump around under the finger.
+                    ProgressView().frame(maxWidth: .infinity).frame(height: 148)
+                }
+            }
+            .task(id: "\(coinID ?? "")#\(range.rawValue)") { await loadHistory() }
+        }
+    }
+
+    /// History mapped for the chart, thinned to something a 148pt-tall view can
+    /// actually use.
+    ///
+    /// CoinGecko's window is not daily despite what the API docs imply: under
+    /// 90 days it returns hourly points, so "90D" arrives as ~2,161 samples —
+    /// about fifteen per horizontal pixel. Drawing them all costs memory and
+    /// makes the scrub crosshair jitter between samples that render on the
+    /// same column. Keep the first and last so the endpoints stay exact, and
+    /// stride the middle.
+    private var chartPoints: [NetWorthPoint] {
+        let mapped = history.map { NetWorthPoint(date: $0.date, value: $0.priceUSD) }
+        let maxPoints = 180
+        guard mapped.count > maxPoints else { return mapped }
+        let stride = Int((Double(mapped.count) / Double(maxPoints)).rounded(.up))
+        var thinned = mapped.enumerated().compactMap { $0.offset % stride == 0 ? $0.element : nil }
+        if let last = mapped.last, thinned.last?.date != last.date { thinned.append(last) }
+        return thinned
+    }
+
+    private func loadHistory() async {
+        guard let id = coinID else { return }
+        loadingHistory = true
+        defer { loadingHistory = false }
+        history = await CoinGecko.priceHistory(coinID: id, days: range.rawValue)
     }
 
     private var positionCard: some View {

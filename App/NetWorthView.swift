@@ -5,6 +5,8 @@ struct NetWorthView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var store = PortfolioStore.live()
     @State private var catalog = CoinCatalog()
+    /// Light/dark override. `.system` is the default and stores nothing.
+    @AppStorage("appearance") private var appearance: Appearance = .system
     @State private var alerts = AlertStore()
     @State private var showingBalance = false
     /// Coin tapped in the market list, pre-filled into the "add holding" sheet.
@@ -68,6 +70,16 @@ struct NetWorthView: View {
                     Button { showingHelp = true } label: {
                         Label("How it works", systemImage: "questionmark.circle")
                     }
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    Picker(selection: $appearance) {
+                        ForEach(Appearance.allCases) { a in
+                            Label(a.label, systemImage: a.icon).tag(a)
+                        }
+                    } label: {
+                        Label("Appearance", systemImage: appearance.icon)
+                    }
+                    .pickerStyle(.menu)
                 }
             }
             .sheet(isPresented: $showingBalance, onDismiss: { pendingAsset = nil }) {
@@ -133,6 +145,10 @@ struct NetWorthView: View {
             }
         }
         .tint(Theme.amber)
+        // Applied here rather than on the App scene so the MacPreview harness
+        // exercises it — that harness does not compile CryptoLedgerApp.swift,
+        // so anything put there is checked only by CI.
+        .preferredColorScheme(appearance.colorScheme)
     }
 
     // MARK: - Loaded
@@ -174,6 +190,7 @@ struct NetWorthView: View {
                             HoldingDetailView(position: p,
                                               name: catalog.name(for: p.assetID),
                                               imageURL: catalog.imageURL(for: p.assetID),
+                                              coinID: catalog.coinID(for: p.assetID),
                                               alerts: alerts,
                                               store: store)
                         } label: {
