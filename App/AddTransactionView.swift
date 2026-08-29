@@ -159,7 +159,16 @@ struct AddTransactionView: View {
             } else if draft.kind == .balance {
                 decimalField(label: "Cost per coin", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
-                Text("Pre-filled with today's price — change it to what you actually paid, if you know. Leave it as-is and your gain starts from today.")
+                // The date lives in detailSection for every other kind, which
+                // on this screen sits below the numeric keypad — so on the one
+                // path most people take it was invisible, and the caption
+                // saying "today's price" read as "you cannot backdate this".
+                // The entry has always carried whatever date you set
+                // (TransactionDraft.makeEntries uses `timestamp: date`); it
+                // just could not be found. Put it beside the cost it dates.
+                DatePicker("Bought on", selection: $draft.date,
+                           displayedComponents: [.date])
+                Text("Both default to today. Set them to what you actually paid and when, and your gain is measured from there. Bought in several lots? Add each one — or paste them all at once with Import CSV.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -173,8 +182,12 @@ struct AddTransactionView: View {
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
             }
-            DatePicker("Date", selection: $draft.date,
-                       displayedComponents: [.date, .hourAndMinute])
+            // Shown for every kind except .balance, which surfaces its own
+            // date up in the amount section next to the cost it qualifies.
+            if draft.kind != .balance {
+                DatePicker("Date", selection: $draft.date,
+                           displayedComponents: [.date, .hourAndMinute])
+            }
         }
     }
 

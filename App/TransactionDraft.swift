@@ -29,7 +29,7 @@ struct TransactionDraft {
 
         var subtitle: String {
             switch self {
-            case .balance: "Enter how much you already hold — valued at today's price"
+            case .balance: "Enter how much you already hold. Cost and date default to today — set both if you bought earlier."
             case .buy: "Spend cash to acquire crypto"
             case .sell: "Dispose crypto for cash"
             case .receive: "Crypto arrived (airdrop, transfer, reward)"

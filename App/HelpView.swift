@@ -15,14 +15,17 @@ struct HelpView: View {
                     section("Three ways to add — easiest first") {
                         step(1, "Add holding",
                              "The quick way. Choose a coin and type how much you own. "
-                             + "It's valued at today's price, so your gains start from now. "
+                             + "Cost and date default to today, so leaving them alone starts your gains from now — set them to what you paid and when if you know. "
                              + "Perfect if you just want to see your net worth.")
                         step(2, "Add transaction",
                              "Log individual buys, sells, deposits, and coins you received. "
                              + "This is what tracks your cost basis and real gains over time.")
                         step(3, "Import a CSV",
-                             "The complete way. Export your history from an exchange and import "
-                             + "it all at once. Argus reads the date, coin, amount, and price.")
+                             "The fastest way to enter many buys at once. Paste rows straight "
+                             + "into the box — one line per purchase, date first — or load a "
+                             + "file exported from an exchange. No spreadsheet needed:\n\n"
+                             + "2024-03-11, buy, BTC, 0.5, 62000\n"
+                             + "2024-07-02, buy, BTC, 0.25, 57000")
                     }
 
                     section("Reading your portfolio") {

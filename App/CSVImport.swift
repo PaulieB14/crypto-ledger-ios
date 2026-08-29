@@ -48,8 +48,15 @@ enum CSVImport {
         guard c.count >= 4 else {
             return .failure("Line \(line): need at least date, type, asset, quantity")
         }
-        guard let kind = kind(from: c[1].lowercased()) else {
-            return .failure("Line \(line): unknown type “\(c[1])”")
+        // Trim every field, not just the numeric ones. A person typing their
+        // history writes "2024-03-11, buy, BTC, 0.5" with spaces after the
+        // commas, and without this the type arrives as " buy" and the row is
+        // rejected as "unknown type" — an error that reads like the word is
+        // wrong when the space is the problem. The asset had the same issue:
+        // " BTC" uppercased is still " BTC" and matches no coin.
+        let kindText = c[1].trimmingCharacters(in: .whitespaces).lowercased()
+        guard let kind = kind(from: kindText) else {
+            return .failure("Line \(line): unknown type “\(c[1].trimmingCharacters(in: .whitespaces))”")
         }
         let qtyText = c[3].trimmingCharacters(in: .whitespaces)
         guard UserNumber.decimal(qtyText) != nil else {
@@ -58,10 +65,11 @@ enum CSVImport {
 
         var d = TransactionDraft()
         d.kind = kind
-        d.asset = kind.isCash ? "USD" : c[2].uppercased()
+        d.asset = kind.isCash ? "USD" : c[2].trimmingCharacters(in: .whitespaces).uppercased()
         d.quantityText = qtyText
         d.priceText = c.count > 4 ? c[4].trimmingCharacters(in: .whitespaces) : ""
-        d.account = (c.count > 5 && !c[5].isEmpty) ? c[5] : "Import"
+        let accountText = c.count > 5 ? c[5].trimmingCharacters(in: .whitespaces) : ""
+        d.account = accountText.isEmpty ? "Import" : accountText
         d.date = parseDate(c[0]) ?? .now
 
         guard d.isValid else {
