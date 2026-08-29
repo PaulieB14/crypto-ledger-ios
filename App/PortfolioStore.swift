@@ -266,6 +266,21 @@ final class PortfolioStore {
         sourceEntries = []
         manualCount = 0
         reconstructed = []
+        // Recorded snapshots too, and the file behind them.
+        //
+        // Clearing used to reset the ledger and the reconstruction but leave
+        // networth_history.json untouched — and because snapshots are
+        // AUTHORITATIVE over reconstruction in historyPoints, the old chart
+        // survived a wipe and could never be got rid of from inside the app.
+        //
+        // The correctness half is minor. The privacy half is not: a
+        // net-worth-per-day series is the most revealing thing this app
+        // derives — it says what you were worth and when — and the button
+        // promises to remove every holding and transaction from the device.
+        // Leaving the shape of someone's money behind after they asked for a
+        // wipe is not a defensible reading of that promise.
+        history = []
+        SnapshotStore.clear()
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)

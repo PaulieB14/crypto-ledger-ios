@@ -30,4 +30,12 @@ enum SnapshotStore {
         guard let url = fileURL, let data = try? JSONEncoder().encode(snaps) else { return }
         try? data.write(to: url, options: .atomic)
     }
+
+    /// Delete the recorded history outright, for "Clear all data". Removes the
+    /// file rather than writing an empty array, so nothing of the old series is
+    /// left on disk to be recovered.
+    static func clear() {
+        guard let url = fileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
 }
