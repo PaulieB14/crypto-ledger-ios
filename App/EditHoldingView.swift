@@ -28,8 +28,8 @@ struct EditHoldingView: View {
         _costText = State(initialValue: "\(rounded)")
     }
 
-    private var qty: Decimal? { Decimal(string: qtyText.trimmingCharacters(in: .whitespaces)) }
-    private var cost: Decimal? { Decimal(string: costText.trimmingCharacters(in: .whitespaces)) }
+    private var qty: Decimal? { UserNumber.decimal(qtyText) }
+    private var cost: Decimal? { UserNumber.decimal(costText) }
     private var isValid: Bool { (qty ?? 0) > 0 }
 
     var body: some View {

@@ -61,10 +61,10 @@ struct TransactionDraft {
     var account: String = "Manual"
     var date: Date = .now
 
-    var quantity: Decimal? { Decimal(string: quantityText.trimmingCharacters(in: .whitespaces)) }
-    var price: Decimal? { Decimal(string: priceText.trimmingCharacters(in: .whitespaces)) }
+    var quantity: Decimal? { UserNumber.decimal(quantityText) }
+    var price: Decimal? { UserNumber.decimal(priceText) }
     /// Trading fee in USD. Blank means none.
-    var fee: Decimal { Decimal(string: feeText.trimmingCharacters(in: .whitespaces)) ?? 0 }
+    var fee: Decimal { UserNumber.decimal(feeText) ?? 0 }
 
     /// Canonical symbol used for the ledger + price lookups. Uppercasing here is
     /// what keeps a typed `btc` from mismatching CoinGecko's `BTC` and showing a

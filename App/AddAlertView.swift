@@ -11,7 +11,7 @@ struct AddAlertView: View {
     @State private var targetText = ""
 
     private var target: Decimal? {
-        Decimal(string: targetText.trimmingCharacters(in: .whitespaces))
+        UserNumber.decimal(targetText)
     }
     private var isValid: Bool { (target ?? 0) > 0 }
 
@@ -39,7 +39,7 @@ struct AddAlertView: View {
                         }
                     }
                 } header: {
-                    Text("Notify me when \(assetID) \(direction.verb) my target")
+                    Text("Notify me when \(assetID) \(direction.conditionVerb) my target")
                 } footer: {
                     // The background-timing disclosure must show on EVERY path.
                     // It used to live in the `else` branch, so any coin with a

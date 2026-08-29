@@ -28,6 +28,15 @@ jobs:
       - name: Xcode version
         run: xcodebuild -version
 
+      - name: Number parsing (locale regression)
+        # Runs before the build because it is fast and it guards the class of
+        # bug that shipped to European users: Decimal(string:) has no locale,
+        # so "1,5" silently parsed as 1. Deliberately a plain SwiftPM
+        # executable rather than an Xcode test target — this repo is developed
+        # on a machine with only Command Line Tools, and a test that can only
+        # run under full Xcode would not be run.
+        run: cd Tests/LocaleNumbers && swift run
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

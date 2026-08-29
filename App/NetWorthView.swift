@@ -429,16 +429,37 @@ private struct HeroCard: View {
             }
 
             // Delta — the only place color is spent on the headline.
+            //
+            // This is the change in TRACKED NET WORTH since the first point on
+            // the chart, which is not the same thing as investment performance:
+            // it counts every holding you added along the way. On a new
+            // portfolio that makes it enormous and green — a real one read
+            // "+$165,434.01 +258.55%" while the BTC row underneath it showed
+            // +$24.99 unrealized, because the implied cost basis ($63,985) was
+            // less than BTC's basis alone ($114,783).
+            //
+            // Unlabelled, under the words NET WORTH, that reads as a return.
+            // It has to say what it measures and over what period, or it is a
+            // performance claim the app cannot support.
             if points.count >= 2 {
-                HStack(spacing: 8) {
-                    Image(systemName: up ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(abs(delta), format: .currency(code: "USD")).monospacedDigit()
-                    Text("\(up ? "+" : "-")\(abs(pct), format: .number.precision(.fractionLength(2)))%")
-                        .monospacedDigit()
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Image(systemName: up ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(abs(delta), format: .currency(code: "USD")).monospacedDigit()
+                        Text("\(up ? "+" : "-")\(abs(pct), format: .number.precision(.fractionLength(2)))%")
+                            .monospacedDigit()
+                    }
+                    .font(.figure(15, .medium))
+                    .foregroundStyle(up ? Theme.gain : Theme.loss)
+
+                    if let since = points.first?.date {
+                        Text("change in tracked value since \(since, format: .dateTime.day().month(.abbreviated)) — includes holdings you added")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .font(.figure(15, .medium))
-                .foregroundStyle(up ? Theme.gain : Theme.loss)
             }
 
             NetWorthChart(points: points) { p in scrubbed = p }

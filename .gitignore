@@ -43,3 +43,6 @@ Secrets.swift
 
 # local macOS SwiftUI preview harness (run without Xcode) — copied sources, not part of the app
 MacPreview/
+
+# SwiftPM build output for the committed locale-parsing checks
+Tests/LocaleNumbers/.build/

@@ -52,7 +52,7 @@ enum CSVImport {
             return .failure("Line \(line): unknown type “\(c[1])”")
         }
         let qtyText = c[3].trimmingCharacters(in: .whitespaces)
-        guard Decimal(string: qtyText) != nil else {
+        guard UserNumber.decimal(qtyText) != nil else {
             return .failure("Line \(line): quantity “\(c[3])” isn’t a number")
         }
 

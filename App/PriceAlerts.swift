@@ -13,7 +13,13 @@ struct PriceAlert: Identifiable, Codable, Hashable {
         var id: String { rawValue }
         var label: String { self == .above ? "Rises above" : "Falls below" }
         var icon: String { self == .above ? "arrow.up.right" : "arrow.down.right" }
+        /// Past tense, for the notification announcing that it happened:
+        /// "BTC rose above $85,911".
         var verb: String { self == .above ? "rose above" : "fell below" }
+        /// Present tense, for the setup screen describing what will happen:
+        /// "Notify me when BTC rises above my target". The past-tense form was
+        /// being reused here and read as a bug in a screenshot.
+        var conditionVerb: String { self == .above ? "rises above" : "falls below" }
     }
 
     var id: UUID = UUID()
