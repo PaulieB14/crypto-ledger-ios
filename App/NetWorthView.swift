@@ -15,6 +15,7 @@ struct NetWorthView: View {
     @State private var showingAdd = false
     @State private var showingImport = false
     @State private var showingHelp = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -57,11 +58,6 @@ struct NetWorthView: View {
                                 Label("Import CSV…", systemImage: "square.and.arrow.down")
                             }
                         }
-                        if store.snapshot != nil {
-                            Button(role: .destructive) { store.clearAll() } label: {
-                                Label("Clear all", systemImage: "trash")
-                            }
-                        }
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
@@ -72,14 +68,9 @@ struct NetWorthView: View {
                     }
                 }
                 ToolbarItem(placement: .secondaryAction) {
-                    Picker(selection: $appearance) {
-                        ForEach(Appearance.allCases) { a in
-                            Label(a.label, systemImage: a.icon).tag(a)
-                        }
-                    } label: {
-                        Label("Appearance", systemImage: appearance.icon)
+                    Button { showingSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
                     }
-                    .pickerStyle(.menu)
                 }
             }
             .sheet(isPresented: $showingBalance, onDismiss: { pendingAsset = nil }) {
@@ -109,6 +100,10 @@ struct NetWorthView: View {
             }
             .sheet(isPresented: $showingHelp) {
                 HelpView()
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(onClearAll: { store.clearAll() },
+                             hasData: store.snapshot != nil)
             }
             .task {
                 alerts.load()
