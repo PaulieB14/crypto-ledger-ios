@@ -404,8 +404,8 @@ struct WalletImportView: View {
                 // Keep the contract, or this symbol can never be repriced: the
                 // ledger stores "STLINK" and the catalog has never heard of it.
                 TokenRegistry.remember(symbol: h.symbol, chain: h.chain, contract: h.contract)
-                d.quantityText = "\(h.quantity)"
-                if let p = resolvedPrices[h.id] { d.priceText = "\(p)" }
+                d.quantityText = UserNumber.text(h.quantity)
+                if let p = resolvedPrices[h.id] { d.priceText = UserNumber.text(p) }
                 return d
             }
         let stakeDrafts: [TransactionDraft] = staking
@@ -419,8 +419,8 @@ struct WalletImportView: View {
                 // queue are still owned, just no longer earning.
                 d.asset = p.symbol
                 d.account = "\(p.protocolName) \(p.vaultName)"
-                d.quantityText = "\(p.amount)"
-                if let price = catalog.price(for: p.symbol) { d.priceText = "\(price)" }
+                d.quantityText = UserNumber.text(p.amount)
+                if let price = catalog.price(for: p.symbol) { d.priceText = UserNumber.text(price) }
                 return d
             }
         // Remember the address whenever anything was imported from it.

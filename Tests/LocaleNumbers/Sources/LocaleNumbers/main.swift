@@ -34,6 +34,32 @@ for (input, localeID, expected) in cases {
         FileHandle.standardError.write("FAIL \(localeID) \"\(input)\" -> \(got), expected \(expected)\n".data(using: .utf8)!)
     }
 }
+
+// ── Round-trip ────────────────────────────────────────────────────────────
+// The regression that nearly shipped in 1.0.2: parsing became locale-aware
+// while prefill stayed dot-decimal, so a value written into an editable field
+// and read straight back could change. In de_DE, 1.234 -> "1.234" -> 1234.
+// A holding opened in Edit and saved untouched became 1000x itself.
+var rtFailures = 0
+for id in ["en_US", "de_DE", "de_CH", "fr_FR"] {
+    let loc = Locale(identifier: id)
+    for raw in ["1.234", "0.5", "1234.56", "0.00000001", "78202", "1000000.25"] {
+        let value = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX"))!
+        let shown = UserNumber.text(value, locale: loc)
+        guard let back = UserNumber.decimal(shown, locale: loc) else {
+            rtFailures += 1
+            FileHandle.standardError.write("ROUND-TRIP \(id): \(raw) -> \"\(shown)\" -> nil\n".data(using: .utf8)!)
+            continue
+        }
+        if back != value {
+            rtFailures += 1
+            FileHandle.standardError.write("ROUND-TRIP \(id): \(raw) -> \"\(shown)\" -> \(back)\n".data(using: .utf8)!)
+        }
+    }
+}
+if rtFailures == 0 { print("UserNumber: round-trip clean across 4 locales") }
+else { FileHandle.standardError.write("\(rtFailures) round-trip failures\n".data(using: .utf8)!); exit(1) }
+
 if failures == 0 {
     print("UserNumber: \(cases.count) cases passed")
 } else {

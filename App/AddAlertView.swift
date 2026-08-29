@@ -98,7 +98,7 @@ struct AddAlertView: View {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, f in
                 let value = roundedNice(price * f)
                 Button {
-                    targetText = "\(value)"
+                    targetText = UserNumber.text(value)
                 } label: {
                     Text(pct(f)).font(.caption.weight(.medium))
                         .frame(maxWidth: .infinity)

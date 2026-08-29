@@ -75,3 +75,34 @@ enum UserNumber {
         return negative ? -d : d
     }
 }
+
+extension UserNumber {
+    /// Render a Decimal for a text field the user can edit, in THEIR format.
+    ///
+    /// The counterpart to `decimal(_:)`, and it must exist or that function is
+    /// a bug generator. Prefills were written as "\(value)", which interpolates
+    /// a Decimal as dot-decimal always. Once parsing became locale-aware the
+    /// two ends disagreed, and the round-trip corrupted data:
+    ///
+    ///     stored 1.234 -> prefilled "1.234" -> re-read in de_DE as 1234
+    ///
+    /// A German user opening Edit on 1.234 BTC and tapping Save with no changes
+    /// wrote 1234 BTC. That is a 1000x silent error, and it was INTRODUCED by
+    /// the locale fix — before it, Decimal(string: "1.234") read back correctly.
+    ///
+    /// Grouping is suppressed deliberately. A separator that only ever means
+    /// "decimal point" cannot be misread as a thousands mark by the parser, and
+    /// nobody wants grouping in a field they are about to edit anyway.
+    static func text(_ value: Decimal, locale: Locale = .current) -> String {
+        // fractionLength is not optional here. The default style rounds to
+        // three places, which renders 0.00000001 BTC as "0" — so opening a
+        // satoshi-scale holding in Edit and saving it would zero the amount.
+        // 18 covers wei-denominated token balances, which wallet import
+        // routinely produces.
+        value.formatted(
+            Decimal.FormatStyle(locale: locale)
+                .grouping(.never)
+                .precision(.fractionLength(0...18))
+        )
+    }
+}

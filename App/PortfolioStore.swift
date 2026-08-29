@@ -248,8 +248,8 @@ final class PortfolioStore {
             var d = TransactionDraft()
             d.kind = .balance
             d.asset = sym
-            d.quantityText = "\(quantity)"
-            d.priceText = "\(unitCostUSD)"
+            d.quantityText = UserNumber.text(quantity)
+            d.priceText = UserNumber.text(unitCostUSD)
             manualEntries.append(contentsOf: d.makeEntries())
         }
         manualCount = manualEntries.count

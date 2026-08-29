@@ -29,7 +29,7 @@ struct AddTransactionView: View {
         // Seed the live price for the default coin so a balance holding is priced
         // from the moment the sheet opens (the catalog is usually already loaded).
         if lockedKind == .balance, let p = catalog.price(for: initial.asset), p > 0 {
-            initial.priceText = "\(p)"
+            initial.priceText = UserNumber.text(p)
         }
         _draft = State(initialValue: initial)
     }
@@ -51,7 +51,7 @@ struct AddTransactionView: View {
                 guard draft.kind == .balance else { return }
                 if catalog.coins.isEmpty { await catalog.load() }
                 if let p = catalog.price(for: draft.asset), p > 0 {
-                    draft.priceText = "\(p)"
+                    draft.priceText = UserNumber.text(p)
                 }
             }
             .navigationTitle(navigationTitle)
@@ -105,7 +105,7 @@ struct AddTransactionView: View {
                 CoinPickerView(catalog: catalog) { coin in
                     draft.asset = coin.symbol
                     if draft.kind.requiresPrice || draft.kind == .receive || draft.kind == .balance {
-                        draft.priceText = "\(coin.priceUSD)"
+                        draft.priceText = UserNumber.text(coin.priceUSD)
                     }
                 }
             } label: {
