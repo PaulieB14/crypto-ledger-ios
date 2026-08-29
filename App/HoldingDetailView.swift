@@ -24,8 +24,8 @@ struct HoldingDetailView: View {
     @State private var loadingHistory = false
     @State private var range: PriceRange = .month
 
-    /// Windows offered under the price chart. CoinGecko returns daily points
-    /// for all of these on the free tier.
+    /// Windows offered under the price chart. CoinGecko returns hourly points
+    /// for all three of these, not daily — see chartPoints, which thins them.
     enum PriceRange: Int, CaseIterable, Identifiable {
         case week = 7, month = 30, quarter = 90
         var id: Int { rawValue }
@@ -81,6 +81,14 @@ struct HoldingDetailView: View {
             news = await News.fetch(query: "\(name) crypto")
             loadingNews = false
         }
+        // Must live on a view that ALWAYS renders. It was attached to the price
+        // card itself, inside `if loadingHistory || history.count >= 2` — which
+        // is false on first render, so the card never appeared, so the task
+        // never ran, so the state that would have made it appear was never
+        // produced. The chart could not load, ever. Gating a view on state that
+        // only that view's own task can produce is a deadlock, and it looks
+        // exactly like a feature that silently does nothing.
+        .task(id: "\(coinID ?? "")#\(range.rawValue)") { await loadHistory() }
     }
 
     private var header: some View {
@@ -132,7 +140,6 @@ struct HoldingDetailView: View {
                     ProgressView().frame(maxWidth: .infinity).frame(height: 148)
                 }
             }
-            .task(id: "\(coinID ?? "")#\(range.rawValue)") { await loadHistory() }
         }
     }
 
