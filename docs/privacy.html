@@ -17,7 +17,7 @@
 </head>
 <body>
 <h1>Privacy Policy — Argus Crypto Tracker</h1>
-<p class="eff">Effective July 23, 2026</p>
+<p class="eff">Effective August 29, 2026</p>
 
 <p>Argus is a crypto portfolio tracker built to keep your financial data private.
 The short version: <strong>we don't collect anything.</strong> There are no
@@ -37,15 +37,31 @@ uploaded to us or to anyone else. Deleting the app deletes your data.</p>
 <p>To show live prices, logos, news, and (only if you use the feature) wallet
 balances, Argus fetches <strong>public</strong> data from third-party services:</p>
 <ul>
-  <li><strong>CoinGecko</strong> — public market prices and coin logos.</li>
+  <li><strong>CoinGecko</strong> — public market prices, coin logos, and price
+    history for the chart on a holding.</li>
+  <li><strong>Coinpaprika</strong> — a fallback price source, used only when
+    CoinGecko is unavailable.</li>
+  <li><strong>DefiLlama</strong> — prices for less common tokens, looked up by
+    the token's contract address. No wallet address is sent.</li>
   <li><strong>Google News</strong> — public headlines for a coin you open.</li>
-  <li><strong>Public block explorers (Blockscout)</strong> — only when you paste a
-    public wallet address to import balances. Only that public address is sent;
-    Argus never asks for a seed phrase or private key.</li>
+  <li><strong>Public block explorers (Blockscout, and the Mode explorer)</strong>
+    — receives a public wallet address you have added, to read its balances.</li>
+  <li><strong>StakeWise</strong> — receives a public wallet address you have
+    added, to read staked vault positions for it.</li>
+  <li><strong>Plasma public RPC (rpc.plasma.to)</strong> — receives a public
+    wallet address you have added, to read its native XPL balance.</li>
 </ul>
-<p>These requests contain no personal information and no identifiers about you.
-Their use of the address or coin you look up is governed by their own privacy
-policies.</p>
+<p>Argus never asks for, and cannot accept, a seed phrase or private key. Only a
+public address is ever sent, and only to the services listed above.</p>
+<p><strong>When these requests happen.</strong> A wallet address is sent when you
+first paste it, and again when you open or return to the app, so that balances
+and staked amounts stay current. If you remove the holdings imported from an
+address, Argus stops sending it.</p>
+<p>A public wallet address is a pseudonymous identifier: it is not your name, but
+it is specific to you and is permanently visible on a public blockchain. The
+services above receive it in order to answer the balance lookup, and their use of
+it is governed by their own privacy policies. Everything else Argus requests —
+prices, logos, headlines — carries no identifier of any kind.</p>
 
 <h2>Notifications</h2>
 <p>Price alerts are delivered as <strong>local</strong> notifications generated on
