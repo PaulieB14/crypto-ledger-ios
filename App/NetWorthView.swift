@@ -554,7 +554,7 @@ private struct HoldingRow: View {
                 if let hf = position.healthFactor {
                     Text("Health " + hf.formatted(.number.precision(.fractionLength(2))))
                         .font(.caption2)
-                        .foregroundStyle(hf < 1.1 ? Theme.loss : .tertiary)
+                        .foregroundStyle(hf < 1.1 ? Theme.loss : .secondary)
                 }
                 if !position.byAccount.isEmpty {
                     Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
