@@ -272,3 +272,118 @@ extension HoldingsRefresh {
         return "Wallet \(a.prefix(6))…\(a.suffix(4))"
     }
 }
+
+extension HoldingsRefresh {
+
+    /// Rewrite loan entries to the protocol's current collateral and debt.
+    ///
+    /// Debt is not a vault. StakeWise growth keeps total basis constant so the
+    /// new units arrive at zero cost — that would turn interest you owe into a
+    /// gain. A liability keeps its unit price (whatever you edited it to) and
+    /// only the quantity changes, so owing more reduces net worth and opens no lot.
+    ///
+    /// Collateral does use the vault rule: supply yield is units you did not
+    /// pay for. Receipt tokens are not rewritten here; they were never imported.
+    static func reconcileLending(entries: [LedgerEntry]) async -> Result {
+        let addresses = watchedAddresses
+        guard !addresses.isEmpty else { return Result(entries: entries) }
+
+        var live: [Lending.Position] = []
+        for address in addresses {
+            // nil is unreachable. An empty list is "no position", which is how
+            // a repaid loan gets cleared — but only for markets that answered.
+            guard let positions = await Lending.positions(address: address, chains: Array(WalletChain.allCases)) else { continue }
+            live.append(contentsOf: positions)
+        }
+        guard !live.isEmpty else { return Result(entries: entries) }
+
+        var out = entries
+        var changed: [(String, Decimal, Decimal)] = []
+        for position in live {
+            let account = position.accountLabel
+            let debt = Dictionary(position.debt.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+            let collateral = Dictionary(position.collateral.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+            out = apply(out, account: account, fresh: debt, debt: true,
+                        dropMissing: position.fullyRead, health: position.healthFactor, changed: &changed)
+            out = apply(out, account: account, fresh: collateral, debt: false,
+                        dropMissing: position.fullyRead, health: nil, changed: &changed)
+        }
+        return Result(entries: out.sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) },
+                      changed: changed.map { (account: $0.0, from: $0.1, to: $0.2) })
+    }
+
+    /// Rewrite one account's existing legs. Never creates a row the user did
+    /// not import. `dropMissing` is false on a partial read, so a reserve the
+    /// node failed to return is left alone instead of booked as a repayment.
+    private static func apply(
+        _ entries: [LedgerEntry],
+        account: String,
+        fresh: [String: Decimal],
+        debt: Bool,
+        dropMissing: Bool,
+        health: Decimal?,
+        changed: inout [(String, Decimal, Decimal)]
+    ) -> [LedgerEntry] {
+        let mine = entries.enumerated().filter {
+            $0.element.accountID == account && ($0.element.kind == .liability) == debt
+        }
+        guard !mine.isEmpty else { return entries }
+        let byAsset = Dictionary(grouping: mine, by: { $0.element.assetID })
+        var remove = Set<Int>()
+        var add: [LedgerEntry] = []
+
+        for (asset, rows) in byAsset {
+            let current = rows.reduce(Decimal(0)) { sum, row in
+                let q = row.element.qtyDelta
+                return sum + (q < 0 ? -q : q)
+            }
+            guard current > 0 else { continue }
+            let next = fresh[asset]
+            if next == nil {
+                guard dropMissing else { continue }
+                remove.formUnion(rows.map(\.offset))
+                changed.append(("\(account) \(asset)", current, 0))
+                continue
+            }
+            let target = next!
+            let drift = target > current ? target - current : current - target
+            let template = rows[0].element
+            let healthMoved = debt && health != template.healthFactor
+            guard drift * 10_000 > current || healthMoved else { continue }
+
+            remove.formUnion(rows.map(\.offset))
+            if target > 0 {
+                let unit: Decimal?
+                if debt {
+                    // Keep the price the user set. Do not spread basis across
+                    // the new, larger balance — that is the vault bug.
+                    unit = template.unitPriceUSD
+                } else {
+                    let basis = rows.reduce(Decimal(0)) { sum, row in
+                        sum + (row.element.unitPriceUSD.map { $0 * absQty(row.element.qtyDelta) } ?? 0)
+                    }
+                    let scaled = basis / target
+                    unit = scaled > 0 ? scaled : template.unitPriceUSD
+                }
+                add.append(LedgerEntry(
+                    id: template.id,
+                    sourceID: template.sourceID,
+                    externalRef: template.externalRef,
+                    timestamp: template.timestamp,
+                    accountID: account,
+                    assetID: asset,
+                    qtyDelta: debt ? -target : target,
+                    kind: debt ? .liability : template.kind,
+                    unitPriceUSD: unit,
+                    groupID: template.groupID,
+                    transferGroupID: template.transferGroupID,
+                    healthFactor: debt ? (health ?? template.healthFactor) : nil))
+            }
+            changed.append(("\(account) \(asset)", current, target))
+        }
+        guard !remove.isEmpty else { return entries }
+        return entries.enumerated().filter { !remove.contains($0.offset) }.map(\.element) + add
+    }
+
+    private static func absQty(_ q: Decimal) -> Decimal { q < 0 ? -q : q }
+}

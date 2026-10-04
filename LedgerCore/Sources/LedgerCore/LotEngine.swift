@@ -15,6 +15,9 @@ public enum CostBasisMethod: String, Codable, Sendable, CaseIterable {
 public struct Lot: Identifiable, Hashable, Sendable {
     public let id: String
     public let assetID: String
+    /// Wallet (or protocol account) the lot was acquired in. A disposal only
+    /// draws lots that share this id — basis does not cross accounts.
+    public let accountID: String
     public let acquiredAt: Date
     public let originalQty: Decimal
     public var remainingQty: Decimal
@@ -68,12 +71,18 @@ public struct LotLedger: Sendable {
 
 /// Replays entries in order and maintains open tax lots.
 ///
-/// v1 pools lots per asset across every account. That is how most consumer
-/// trackers behave and it keeps matched transfers free, but note that
-/// Rev. Proc. 2024-28 moved US taxpayers to per-wallet basis tracking for
-/// dispositions from 2025 onward. Pooling here is a deliberate v1 simplification,
-/// not an oversight — `accountID` is carried on every entry so the switch to
-/// per-wallet lots is a change to the key of `lots`, nothing more.
+/// Lots are keyed by (account, asset). A sale, fee, or transfer-fee consumes
+/// lots from that account only — Rev. Proc. 2024-28's per-wallet rule, and
+/// the reason a HIFO sale in one wallet must not reach into another wallet's
+/// expensive lot. FIFO / LIFO / HIFO still choose the order *within* the account.
+///
+/// Matched transfers do not relocate lots and do not realize, except the
+/// network fee, which is written off from the source account (where the coins
+/// were acquired). Moving specific lots onto the destination would change
+/// which lots a later sale on the source wallet draws, and the known-answer
+/// fixture is that case: the same coinbase BTC sale is long-term under FIFO
+/// (+$8,400) and short-term under HIFO (+$3,000). Purchase prices stay
+/// editable after the fact; this engine does not invent a transfer history.
 public struct LotEngine: Sendable {
 
     public var method: CostBasisMethod
@@ -95,7 +104,8 @@ public struct LotEngine: Sendable {
     ///   - transferFees: differential per matched transfer, keyed by the inbound entry id.
     public func replay(
         _ entries: [LedgerEntry],
-        transferFees: [String: Decimal] = [:]
+        transferFees: [String: Decimal] = [:],
+        feeAccounts: [String: String] = [:]
     ) -> LotLedger {
 
         var lots: [String: [Lot]] = [:]
@@ -113,9 +123,10 @@ public struct LotEngine: Sendable {
                     unpriced.append(entry)
                     continue
                 }
-                lots[entry.assetID, default: []].append(
+                lots[Self.key(entry.accountID, entry.assetID), default: []].append(
                     Lot(id: entry.id,
                         assetID: entry.assetID,
+                        accountID: entry.accountID,
                         acquiredAt: entry.timestamp,
                         originalQty: entry.qtyDelta,
                         remainingQty: entry.qtyDelta,
@@ -125,20 +136,27 @@ public struct LotEngine: Sendable {
             } else if entry.kind.isDisposal {
                 let qty = -entry.qtyDelta
                 let proceeds = qty * (entry.unitPriceUSD ?? 0)
-                consume(qty: qty, proceeds: proceeds, entry: entry, isTransferFee: false,
+                consume(qty: qty, proceeds: proceeds, entry: entry,
+                        accountID: entry.accountID, isTransferFee: false,
                         lots: &lots, realized: &realized, uncovered: &uncovered)
 
             } else if entry.kind == .transferIn, let fee = transferFees[entry.id], fee > 0 {
-                // The quantity that never arrived. Disposed at zero proceeds.
-                consume(qty: fee, proceeds: 0, entry: entry, isTransferFee: true,
+                // The quantity that never arrived. Written off where the coins
+                // were acquired, not on the empty destination wallet.
+                let source = feeAccounts[entry.id] ?? entry.accountID
+                consume(qty: fee, proceeds: 0, entry: entry,
+                        accountID: source, isTransferFee: true,
                         lots: &lots, realized: &realized, uncovered: &uncovered)
 
             } else if entry.kind == .fee, entry.qtyDelta < 0 {
                 let qty = -entry.qtyDelta
-                consume(qty: qty, proceeds: 0, entry: entry, isTransferFee: false,
+                consume(qty: qty, proceeds: 0, entry: entry,
+                        accountID: entry.accountID, isTransferFee: false,
                         lots: &lots, realized: &realized, uncovered: &uncovered)
             }
-            // transferIn / transferOut that matched: no lot movement, by design.
+            // Liabilities are not lots and not disposals: the quantity owed is
+            // folded into net worth separately. Matched transfers do not move
+            // lots — see the type comment.
         }
 
         return LotLedger(
@@ -150,17 +168,23 @@ public struct LotEngine: Sendable {
         )
     }
 
+    private static func key(_ account: String, _ asset: String) -> String {
+        account + "\u{1}" + asset
+    }
+
     private func consume(
         qty: Decimal,
         proceeds: Decimal,
         entry: LedgerEntry,
+        accountID: String,
         isTransferFee: Bool,
         lots: inout [String: [Lot]],
         realized: inout [RealizedGain],
         uncovered: inout [LedgerEntry]
     ) {
         guard qty > 0 else { return }
-        guard var available = lots[entry.assetID], available.contains(where: \.isOpen) else {
+        let key = Self.key(accountID, entry.assetID)
+        guard var available = lots[key], available.contains(where: \.isOpen) else {
             uncovered.append(entry)
             return
         }
@@ -200,7 +224,7 @@ public struct LotEngine: Sendable {
             remaining -= taken
         }
 
-        lots[entry.assetID] = available
+        lots[key] = available
         if remaining > 0 { uncovered.append(entry) }
     }
 

@@ -17,6 +17,7 @@ public enum EntryKind: String, Codable, Sendable, CaseIterable {
     case reward         // staking / interest income
     case airdrop        // received at market value, zero cost
     case fee            // network or exchange fee, paid in this asset
+    case liability      // amount owed; qtyDelta is negative. Not a disposal.
 
     /// Creates a tax lot.
     public var isAcquisition: Bool {
@@ -37,6 +38,10 @@ public enum EntryKind: String, Codable, Sendable, CaseIterable {
     public var isTransfer: Bool {
         self == .transferIn || self == .transferOut
     }
+
+    /// Owed units. Never a tax lot and never a sale — interest just makes
+    /// `qtyDelta` more negative. Negative cash is not this.
+    public var isLiability: Bool { self == .liability }
 }
 
 /// An immutable fact about one asset movement.
@@ -84,6 +89,11 @@ public struct LedgerEntry: Identifiable, Hashable, Sendable, Codable {
     /// Set by `TransferMatcher` when this entry is paired with its counterpart.
     public var transferGroupID: String?
 
+    /// Health factor for a loan leg, when the protocol reports one (Aave
+    /// `getUserAccountData`, 1.0 = the liquidation threshold). Nil otherwise.
+    /// Not a price and not used by the lot engine.
+    public var healthFactor: Decimal?
+
     public init(
         id: String = UUID().uuidString,
         sourceID: String,
@@ -95,7 +105,8 @@ public struct LedgerEntry: Identifiable, Hashable, Sendable, Codable {
         kind: EntryKind,
         unitPriceUSD: Decimal? = nil,
         groupID: String? = nil,
-        transferGroupID: String? = nil
+        transferGroupID: String? = nil,
+        healthFactor: Decimal? = nil
     ) {
         self.id = id
         self.sourceID = sourceID
@@ -108,6 +119,7 @@ public struct LedgerEntry: Identifiable, Hashable, Sendable, Codable {
         self.unitPriceUSD = unitPriceUSD
         self.groupID = groupID
         self.transferGroupID = transferGroupID
+        self.healthFactor = healthFactor
     }
 
     public var dedupeKey: String { "\(sourceID)|\(externalRef)" }
@@ -122,7 +134,7 @@ extension LedgerEntry {
 
     private enum CodingKeys: String, CodingKey {
         case id, sourceID, externalRef, timestamp, accountID, assetID
-        case qtyDelta, kind, unitPriceUSD, groupID, transferGroupID
+        case qtyDelta, kind, unitPriceUSD, groupID, transferGroupID, healthFactor
     }
 
     public init(from decoder: Decoder) throws {
@@ -146,6 +158,7 @@ extension LedgerEntry {
 
         qtyDelta = try LedgerEntry.decimal(from: c, forKey: .qtyDelta)
         unitPriceUSD = try LedgerEntry.decimalIfPresent(from: c, forKey: .unitPriceUSD)
+        healthFactor = try LedgerEntry.decimalIfPresent(from: c, forKey: .healthFactor)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -161,6 +174,7 @@ extension LedgerEntry {
         try c.encodeIfPresent(unitPriceUSD.map { "\($0)" }, forKey: .unitPriceUSD)
         try c.encodeIfPresent(groupID, forKey: .groupID)
         try c.encodeIfPresent(transferGroupID, forKey: .transferGroupID)
+        try c.encodeIfPresent(healthFactor.map { "\($0)" }, forKey: .healthFactor)
     }
 
     /// `ISO8601DateFormatter` is a reference type and not `Sendable`, so a

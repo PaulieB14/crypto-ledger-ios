@@ -29,7 +29,7 @@ struct HelpView: View {
                     }
 
                     section("Reading your portfolio") {
-                        bullet("Net worth", "Your cash plus the live value of every coin you hold.")
+                        bullet("Net worth", "Your cash plus the live value of every coin you hold, minus what you owe on a loan.")
                         bullet("Unrealized", "Paper gain or loss — what you'd make if you sold now.")
                         bullet("Realized gains", "Locked-in profit from coins you've actually sold. "
                                + "Switch cost-basis method (FIFO/LIFO/HIFO) to see how it changes.")

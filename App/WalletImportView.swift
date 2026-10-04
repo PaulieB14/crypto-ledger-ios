@@ -27,6 +27,8 @@ struct WalletImportView: View {
     @State private var skippedUnpriced = 0
     /// Staked positions, which a token-balance scan cannot see at all.
     @State private var staking: [StakingPosition] = []
+    /// Collateral and debt. Receipt tokens for these are removed from `priced`.
+    @State private var loans: [Lending.Position] = []
 
     private enum Phase { case input, scanning, results, empty }
 
@@ -154,6 +156,15 @@ struct WalletImportView: View {
                     }
                 }
             }
+            if !loans.isEmpty {
+                Section {
+                    ForEach(loans) { p in loanRow(p) }
+                } header: {
+                    Text("Loans")
+                } footer: {
+                    Text("Collateral minus what you owe. Receipt tokens (aTokens, debt tokens) are left out of the list below so they are not counted twice. Added at the protocol's current price — tap the holding afterwards to set what you actually paid.")
+                }
+            }
             Section {
                 ForEach(priced) { h in
                     holdingRow(h)
@@ -178,6 +189,7 @@ struct WalletImportView: View {
     /// Selection key for a staked position. Prefixed because a vault IS a
     /// contract, so its id could otherwise collide with a token holding's.
     private func stakeKey(_ p: StakingPosition) -> String { "stake:" + p.id }
+    private func loanKey(_ p: Lending.Position) -> String { "loan:" + p.id }
 
     private func stakingRow(_ p: StakingPosition) -> some View {
         let isOn = selected.contains(stakeKey(p))
@@ -211,6 +223,44 @@ struct WalletImportView: View {
         }
         }
         .buttonStyle(.plain)
+    }
+
+    private func loanRow(_ p: Lending.Position) -> some View {
+        let isOn = selected.contains(loanKey(p))
+        return Button {
+            if isOn { selected.remove(loanKey(p)) } else { selected.insert(loanKey(p)) }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isOn ? Theme.amber : Color.secondary)
+                    Text(p.protocolName).fontWeight(.semibold)
+                    Spacer()
+                    Text(p.netUSD, format: .currency(code: "USD"))
+                        .monospacedDigit()
+                }
+                Text(loanCaption(p))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let hf = p.healthFactor {
+                    Text("Health " + hf.formatted(.number.precision(.fractionLength(2))))
+                        .font(.caption).foregroundStyle(hf < 1.1 ? .orange : .secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "1.2 ETH collateral · 400 USDC debt" — quantities, not a second valuation.
+    private func loanCaption(_ p: Lending.Position) -> String {
+        func side(_ legs: [Lending.Leg], _ word: String) -> String? {
+            guard !legs.isEmpty else { return nil }
+            let body = legs.map {
+                $0.amount.formatted(.number.precision(.significantDigits(1...6))) + " " + $0.symbol
+            }.joined(separator: ", ")
+            return body + " " + word
+        }
+        return [side(p.collateral, "collateral"), side(p.debt, "debt")]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 
     private func holdingRow(_ h: WalletHolding) -> some View {
@@ -291,8 +341,12 @@ struct WalletImportView: View {
             // Staked assets live in the protocol's contract, not the wallet, so
             // the balance scan above is blind to them. Fetch both concurrently.
             async let stakingTask = StakeWise.positions(address: addr)
+            async let lendingTask = Lending.positions(address: addr, chains: selectedChains)
             let scan = await WalletImporter.fetch(address: addr, chains: selectedChains)
             staking = (await stakingTask) ?? []
+            loans = (await lendingTask) ?? []
+            // Receipt and debt tokens are the loan, not extra holdings.
+            let blocked = Set(loans.flatMap(\.representedTokens).map { $0.lowercased() })
             reachedAnyChain = scan.reachedAnyChain
             // Only filter on "has a live price" when we actually have prices. If
             // the catalog didn't load, every holding fails that test and the
@@ -324,7 +378,7 @@ struct WalletImportView: View {
             var merged: [String: WalletHolding] = [:]
             var priceByID: [String: Decimal] = [:]
             var unpriced = 0
-            for h in scan.holdings {
+            for h in scan.holdings where !blocked.contains(h.contract.lowercased()) {
                 // Identity + price, in priority order:
                 //  1. DefiLlama, addressed by (chain, contract) and filtered on
                 //     its own confidence score. Addressing by contract means a
@@ -373,15 +427,15 @@ struct WalletImportView: View {
                     let bv = (byHoldingID[b.id] ?? 0) * b.quantity
                     return av == bv ? a.symbol < b.symbol : av > bv
                   }
-                : scan.holdings
+                : scan.holdings.filter { !blocked.contains($0.contract.lowercased()) }
             priced = usable
-            selected = Set(usable.map(\.id)).union(staking.map(stakeKey))
+            selected = Set(usable.map(\.id)).union(staking.map(stakeKey)).union(loans.map(loanKey))
             // "Nothing found" must account for STAKED positions too. Keyed on
             // usable alone, a wallet holding no priced tokens but a large vault
             // deposit fell through to the empty state and never rendered the
             // Staked section — the 27,444 ETH test address is exactly that
             // shape, and it would have reported an empty wallet.
-            phase = (usable.isEmpty && staking.isEmpty) ? .empty : .results
+            phase = (usable.isEmpty && staking.isEmpty && loans.isEmpty) ? .empty : .results
         }
     }
 
@@ -397,9 +451,8 @@ struct WalletImportView: View {
                 var d = TransactionDraft()
                 d.kind = .balance
                 d.asset = h.symbol
-                // Provenance. Lots still pool per asset, but the portfolio can
-                // now say which part of your ETH is sitting in a wallet and
-                // which part is staked, instead of showing one merged number.
+                // Today's price, not a reconstructed purchase. Editable later.
+                // The account is this wallet, so a later sale draws only these lots.
                 d.account = walletAccount
                 // Keep the contract, or this symbol can never be repriced: the
                 // ledger stores "STLINK" and the catalog has never heard of it.
@@ -430,10 +483,29 @@ struct WalletImportView: View {
         // the same watchlist drives the wallet-balance refresh, so anyone who
         // imported a plain wallet registered no address, and their balances
         // silently never refreshed at all.
-        if !drafts.isEmpty || !stakeDrafts.isEmpty {
+        let loanDrafts: [TransactionDraft] = loans
+            .filter { selected.contains(loanKey($0)) }
+            .flatMap { p -> [TransactionDraft] in
+                // Stamped at the oracle's current price. No historical replay:
+                // the purchase price is editable after import.
+                func draft(_ leg: Lending.Leg, kind: TransactionDraft.Kind) -> TransactionDraft {
+                    var d = TransactionDraft()
+                    d.kind = kind
+                    d.asset = leg.symbol
+                    d.account = p.accountLabel
+                    d.quantityText = UserNumber.text(leg.amount)
+                    d.healthFactor = p.healthFactor
+                    let price = leg.unitPriceUSD ?? catalog.price(for: leg.symbol)
+                    if let price { d.priceText = UserNumber.text(price) }
+                    return d
+                }
+                return p.collateral.map { draft($0, kind: .balance) }
+                    + p.debt.map { draft($0, kind: .liability) }
+            }
+        if !drafts.isEmpty || !stakeDrafts.isEmpty || !loanDrafts.isEmpty {
             HoldingsRefresh.remember(address: address)
         }
-        onImport(drafts + stakeDrafts)
+        onImport(drafts + stakeDrafts + loanDrafts)
         dismiss()
     }
 }

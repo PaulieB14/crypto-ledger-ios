@@ -181,6 +181,12 @@ final class PortfolioStore {
             updates += staked.changed.map(Self.describe)
         }
 
+        let loans = await HoldingsRefresh.reconcileLending(entries: manualEntries)
+        if !loans.isEmpty {
+            manualEntries = loans.entries
+            updates += loans.changed.map(Self.describe)
+        }
+
         let wallet = await HoldingsRefresh.reconcileWallet(entries: manualEntries)
         if !wallet.isEmpty {
             manualEntries = wallet.entries
@@ -219,11 +225,14 @@ final class PortfolioStore {
     /// paired cash legs of its trades (matched by `groupID`). Immutable-friendly
     /// — nothing is edited, the deleted facts are simply dropped and the
     /// portfolio re-folded. Demo/source entries aren't touched.
-    func removeAsset(_ assetID: String) {
-        let groups = Set(manualEntries.filter { $0.assetID == assetID }.compactMap(\.groupID))
+    func removeAsset(_ assetID: String, liability: Bool = false) {
+        let groups = Set(manualEntries.filter {
+            $0.assetID == assetID && ($0.kind == .liability) == liability
+        }.compactMap(\.groupID))
         let before = manualEntries.count
         manualEntries.removeAll { e in
-            e.assetID == assetID || (e.groupID.map(groups.contains) ?? false)
+            let sameKind = (e.kind == .liability) == liability
+            return sameKind && (e.assetID == assetID || (e.groupID.map(groups.contains) ?? false))
         }
         guard manualEntries.count != before else { return }
         manualCount = manualEntries.count
@@ -238,16 +247,23 @@ final class PortfolioStore {
     /// cash legs) and recording one balance fact, so editing is clean for the
     /// common single-holding case. A holding built from many transactions is
     /// consolidated into this one.
-    func setHolding(assetID: String, quantity: Decimal, unitCostUSD: Decimal) {
+    func setHolding(assetID: String, quantity: Decimal, unitCostUSD: Decimal, liability: Bool = false) {
         let sym = assetID.uppercased()
-        let groups = Set(manualEntries.filter { $0.assetID == sym }.compactMap(\.groupID))
+        let existing = manualEntries.filter { $0.assetID == sym && ($0.kind == .liability) == liability }
+        let account = existing.first?.accountID ?? "Manual"
+        let health = existing.compactMap(\.healthFactor).first
+        let groups = Set(existing.compactMap(\.groupID))
         manualEntries.removeAll { e in
-            e.assetID == sym || (e.groupID.map(groups.contains) ?? false)
+            let sameKind = (e.kind == .liability) == liability
+            return sameKind && (e.assetID == sym || (e.groupID.map(groups.contains) ?? false))
         }
         if quantity > 0 {
             var d = TransactionDraft()
-            d.kind = .balance
+            // Editing a loan must not turn the debt into a holding.
+            d.kind = liability ? .liability : .balance
             d.asset = sym
+            d.account = account
+            d.healthFactor = liability ? health : nil
             d.quantityText = UserNumber.text(quantity)
             d.priceText = UserNumber.text(unitCostUSD)
             manualEntries.append(contentsOf: d.makeEntries())
@@ -284,6 +300,28 @@ final class PortfolioStore {
         recompute()
         state = .loaded
         LedgerStore.save(manualEntries)
+    }
+
+    /// The entries file, for the user to keep a copy. Not the CSV trade format.
+    func exportLedger() -> [LedgerEntry] { manualEntries }
+
+    /// Replace the on-device ledger with a file this app previously exported.
+    /// Recorded net-worth snapshots are cleared: they described the old ledger,
+    /// and a restore that left them in place would draw someone else's chart.
+    func restoreLedger(_ entries: [LedgerEntry]) {
+        manualEntries = entries
+        sourceEntries = []
+        manualCount = entries.count
+        reconstructed = []
+        history = []
+        SnapshotStore.clear()
+        for e in entries where e.assetID != "USD" {
+            if let p = e.unitPriceUSD, p > 0 { spot[e.assetID] = p }
+        }
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
     }
 
     private var allEntries: [LedgerEntry] {

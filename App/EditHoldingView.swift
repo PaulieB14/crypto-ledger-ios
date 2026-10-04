@@ -36,8 +36,8 @@ struct EditHoldingView: View {
         NavigationStack {
             Form {
                 Section("Holding") {
-                    field("Amount", $qtyText, suffix: position.assetID)
-                    field("Cost per coin", $costText, suffix: "USD")
+                    field(position.isLiability ? "Amount you owe" : "Amount", $qtyText, suffix: position.assetID)
+                    field(position.isLiability ? "Price per coin" : "Cost per coin", $costText, suffix: "USD")
                 }
 
                 if let q = qty, let c = cost {
@@ -53,7 +53,7 @@ struct EditHoldingView: View {
                     Button(role: .destructive) {
                         onDelete(); dismiss()
                     } label: {
-                        Label("Remove this holding", systemImage: "trash")
+                        Label(position.isLiability ? "Remove this debt" : "Remove this holding", systemImage: "trash")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

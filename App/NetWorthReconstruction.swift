@@ -41,17 +41,33 @@ enum NetWorthReconstruction {
                   let dayEnd = cal.date(byAdding: .day, value: 1, to: day)?.addingTimeInterval(-1)
             else { continue }
 
-            // Cumulative quantity per asset (and cash) as of end of this day.
+            // Cumulative quantity per asset as of end of this day. A liability
+            // is owed, not held, so it is subtracted at the day's price rather
+            // than folded into the holding (and negative cash is not a loan).
             var qty: [String: Decimal] = [:]
+            var debt: [String: Decimal] = [:]
             for e in sorted where e.timestamp <= dayEnd {
-                qty[e.assetID, default: 0] += e.qtyDelta
+                if e.kind == .liability {
+                    let owed = e.qtyDelta < 0 ? -e.qtyDelta : e.qtyDelta
+                    debt[e.assetID, default: 0] += owed
+                } else {
+                    qty[e.assetID, default: 0] += e.qtyDelta
+                }
             }
 
-            var value = ((qty["USD"] ?? 0) as NSDecimalNumber).doubleValue
+            // Same floor as PortfolioEngine: cash you never deposited is not
+            // a loan, and must not pull the chart below the number on screen.
+            let cash = qty["USD"] ?? 0
+            var value = ((cash > 0 ? cash : 0) as NSDecimalNumber).doubleValue
             var pricedAnything = false
             for (asset, q) in qty where asset != "USD" && q > 0 {
                 guard let price = priceOn(day: day, byDay: priceByAssetDay[asset], cal: cal) else { continue }
                 value += (q as NSDecimalNumber).doubleValue * price
+                pricedAnything = true
+            }
+            for (asset, q) in debt where q > 0 {
+                guard let price = priceOn(day: day, byDay: priceByAssetDay[asset], cal: cal) else { continue }
+                value -= (q as NSDecimalNumber).doubleValue * price
                 pricedAnything = true
             }
 

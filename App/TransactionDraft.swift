@@ -8,7 +8,7 @@ import LedgerCore
 struct TransactionDraft {
 
     enum Kind: String, CaseIterable, Identifiable {
-        case balance, buy, sell, receive, deposit
+        case balance, buy, sell, receive, deposit, liability
 
         var id: String { rawValue }
 
@@ -24,6 +24,7 @@ struct TransactionDraft {
             case .sell: "Sell"
             case .receive: "Receive"
             case .deposit: "Add cash"
+            case .liability: "Debt"
             }
         }
 
@@ -34,6 +35,7 @@ struct TransactionDraft {
             case .sell: "Dispose crypto for cash"
             case .receive: "Crypto arrived (airdrop, transfer, reward)"
             case .deposit: "Fund your account with USD"
+            case .liability: "Amount owed against collateral"
             }
         }
 
@@ -44,6 +46,7 @@ struct TransactionDraft {
             case .sell: "arrow.up.right.circle.fill"
             case .receive: "tray.and.arrow.down.fill"
             case .deposit: "dollarsign.circle.fill"
+            case .liability: "minus.circle.fill"
             }
         }
 
@@ -60,6 +63,8 @@ struct TransactionDraft {
     var feeText: String = ""
     var account: String = "Manual"
     var date: Date = .now
+    /// Set on an imported loan. Ignored by every other kind.
+    var healthFactor: Decimal? = nil
 
     var quantity: Decimal? { UserNumber.decimal(quantityText) }
     var price: Decimal? { UserNumber.decimal(priceText) }
@@ -90,7 +95,7 @@ struct TransactionDraft {
         case .sell:
             guard let q = quantity, let p = price else { return nil }
             return q * p - fee
-        case .receive, .balance:
+        case .receive, .balance, .liability:
             guard let q = quantity, let p = price else { return nil }
             return q * p
         }
@@ -127,7 +132,8 @@ struct TransactionDraft {
                 qtyDelta: qtyDelta,
                 kind: k,
                 unitPriceUSD: unit,
-                groupID: group)
+                groupID: group,
+                healthFactor: k == .liability ? healthFactor : nil)
         }
 
         switch kind {
@@ -155,6 +161,10 @@ struct TransactionDraft {
             return [entry(asset, q, .airdrop, price)]
         case .deposit:
             return [entry("USD", q, .deposit, 1)]
+        case .liability:
+            // Negative quantity, and not a disposal. Interest later makes this
+            // more negative; it must not become a lot.
+            return [entry(asset, -q, .liability, price)]
         }
     }
 
