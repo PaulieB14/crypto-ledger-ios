@@ -2,10 +2,8 @@ import Testing
 import Foundation
 @testable import LedgerCore
 
-/// Staked ETH and wallet ETH are one asset to the tax engine and two different
-/// things to the person holding them. Lots stay pooled — that is deliberate, see
-/// `LotEngine` — so the split is carried separately as provenance. These tests
-/// pin the cases where showing it would be wrong.
+/// Staked ETH and wallet ETH are one row and two places. The split is
+/// provenance. A sale in one account must not throw that split away.
 @Suite("Position provenance")
 struct ProvenanceTests {
 
@@ -45,10 +43,10 @@ struct ProvenanceTests {
         #expect(snap.positions.first { $0.assetID == "ETH" }?.byAccount.isEmpty == true)
     }
 
-    @Test("Stays silent rather than showing parts that contradict the total")
-    func silentWhenPartsDoNotSum() {
-        // A sale draws from pooled lots, not from the account the units left, so
-        // the surviving per-account positives no longer describe the remainder.
+    @Test("A sale in one account does not discard the other account's share")
+    func keepsSplitAfterASale() {
+        // The sale draws only on Wallet's lots. StakeWise's units are still
+        // there, and the caption has to keep saying so.
         var entries = [
             acquire("w", account: "Wallet", asset: "ETH", qty: "5", price: "3000", day: 1),
             acquire("s", account: "StakeWise Genesis Vault", asset: "ETH", qty: "5", price: "3000", day: 1),
@@ -62,6 +60,7 @@ struct ProvenanceTests {
         let snap = PortfolioEngine(method: .fifo).snapshot(entries: entries, spot: ["ETH": dec("4000")])
         let eth = snap.positions.first { $0.assetID == "ETH" }
         #expect(eth?.qty == dec("6"))
-        #expect(eth?.byAccount.isEmpty == true)
+        #expect(eth?.byAccount.map(\.accountID) == ["StakeWise Genesis Vault", "Wallet"])
+        #expect(eth?.byAccount.reduce(Decimal(0)) { $0 + $1.qty } == eth?.qty)
     }
 }

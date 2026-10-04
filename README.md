@@ -78,11 +78,13 @@ counterpart, `snapshot.reconciles` goes false and the entry lands in the review 
 rather than being guessed at as a sale. A visible discrepancy beats a confident wrong
 number — the principle the whole wallet-import path is built on.
 
-**Lots are pooled per asset, not per wallet.** That is how most consumer trackers behave,
-and it keeps matched transfers free. Note that Rev. Proc. 2024-28 moved US taxpayers to
-per-wallet basis tracking for dispositions from 2025 onward, so this is a v1
-simplification to revisit before shipping tax exports. `accountID` is on every entry, so
-the change is the key of the `lots` dictionary and nothing else.
+**Lots are per wallet, not pooled per asset.** A sale consumes lots from that
+account only (FIFO, LIFO, or HIFO inside the account). Matched transfers still
+do not realize a gain, and they do not move lots: the known-answer fixture sells
+BTC from the same account that bought it, and that sale stays long-term under
+FIFO (+$8,400) and short-term under HIFO (+$3,000). Carrying specific lots
+across the transfer would change that. Purchase prices are editable after import;
+wallet import does not replay history to invent them.
 
 **Net worth is method-invariant; the realized/unrealized split is not.** The fixture is
 built so the same BTC sale is long-term under FIFO (+$8,400) and short-term under HIFO
@@ -130,7 +132,9 @@ train and rejects further uploads to it.
 - Prices and identity cover the top 1,000 coins by market cap; holdings outside that are
   recognised but shown without a value.
 - Plasma is native-balance only (see above).
-- Cost basis is pooled per asset, not per wallet.
+- Cost basis is per wallet. A matched transfer does not relocate lots.
+- Wallet import stamps today's price. It does not replay historical buys.
+- Crypto-backed loans (Aave v3, Spark) count as collateral minus debt. Morpho and Compound use the same position shape but are not wired yet.
 - Wallet import reads public explorers, so it inherits their coverage and uptime.
 
 ## License

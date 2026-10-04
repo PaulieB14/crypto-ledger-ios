@@ -103,7 +103,9 @@ struct NetWorthView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(onClearAll: { store.clearAll() },
-                             hasData: store.snapshot != nil)
+                             hasData: store.snapshot != nil,
+                             ledgerEntries: { store.exportLedger() },
+                             onRestoreLedger: { store.restoreLedger($0) })
             }
             .task {
                 alerts.load()
@@ -194,7 +196,7 @@ struct NetWorthView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button(role: .destructive) {
-                                store.removeAsset(p.assetID)
+                                store.removeAsset(p.assetID, liability: p.isLiability)
                             } label: {
                                 Label("Remove \(p.assetID)", systemImage: "trash")
                             }
@@ -542,9 +544,18 @@ private struct HoldingRow: View {
                 Text(position.assetID).fontWeight(.semibold)
                 Text(position.qty.formatted(.number.precision(.significantDigits(1...8))))
                     .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                // Lots pool per asset, so staked ETH and wallet ETH share one
+                // One row per asset, so staked ETH and wallet ETH share one
                 // row. Without this line the merged total looks like a single
                 // wallet balance, which is the wrong story.
+                if position.isLiability {
+                    Text("Debt")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                if let hf = position.healthFactor {
+                    Text("Health " + hf.formatted(.number.precision(.fractionLength(2))))
+                        .font(.caption2)
+                        .foregroundStyle(hf < 1.1 ? Theme.loss : .secondary)
+                }
                 if !position.byAccount.isEmpty {
                     Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
@@ -553,7 +564,7 @@ private struct HoldingRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 if let value = position.marketValueUSD {
-                    Text(value, format: .currency(code: "USD"))
+                    Text(position.isLiability ? -value : value, format: .currency(code: "USD"))
                         .monospacedDigit().fontWeight(.medium)
                 } else {
                     Text("No price").foregroundStyle(.secondary)

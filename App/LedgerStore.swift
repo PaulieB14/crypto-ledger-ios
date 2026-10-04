@@ -22,11 +22,11 @@ enum LedgerStore {
 
     static func load() -> [LedgerEntry] {
         guard let url = fileURL, let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode([LedgerEntry].self, from: data)) ?? []
+        return (try? LedgerArchive.decode(data)) ?? []
     }
 
     static func save(_ entries: [LedgerEntry]) {
-        guard let url = fileURL, let data = try? JSONEncoder().encode(entries) else { return }
+        guard let url = fileURL, let data = try? LedgerArchive.encode(entries) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }

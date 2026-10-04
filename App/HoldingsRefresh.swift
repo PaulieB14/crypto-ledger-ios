@@ -272,3 +272,47 @@ extension HoldingsRefresh {
         return "Wallet \(a.prefix(6))…\(a.suffix(4))"
     }
 }
+
+extension HoldingsRefresh {
+
+    /// Rewrite loan entries to the protocol's current collateral and debt.
+    ///
+    /// Debt is not a vault. StakeWise growth keeps total basis constant so the
+    /// new units arrive at zero cost — that would turn interest you owe into a
+    /// gain. A liability keeps its unit price (whatever you edited it to) and
+    /// only the quantity changes, so owing more reduces net worth and opens no lot.
+    ///
+    /// Collateral does use the vault rule: supply yield is units you did not
+    /// pay for. Receipt tokens are not rewritten here; they were never imported.
+    ///
+    /// Each address is its own account: `Aave Ethereum ·` plus the full
+    /// address. Rows imported before that, labeled only `Aave Ethereum`, still
+    /// match when just one wallet claims the label, and the rewrite stores
+    /// the wallet key.
+    static func reconcileLending(entries: [LedgerEntry]) async -> Result {
+        let addresses = watchedAddresses
+        guard !addresses.isEmpty else { return Result(entries: entries) }
+
+        var updates: [LendingRefreshUpdate] = []
+        for address in addresses {
+            // nil is unreachable. An empty list is "no position", which is how
+            // a repaid loan gets cleared — but only for markets that answered.
+            guard let positions = await Lending.positions(address: address, chains: Array(WalletChain.allCases)) else { continue }
+            for position in positions {
+                let debt = Dictionary(position.debt.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+                let collateral = Dictionary(position.collateral.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+                updates.append(LendingRefreshUpdate(
+                    accountID: position.accountLabel,
+                    legacyAccountID: position.legacyAccountLabel,
+                    debt: debt,
+                    collateral: collateral,
+                    fullyRead: position.fullyRead,
+                    healthFactor: position.healthFactor))
+            }
+        }
+        guard !updates.isEmpty else { return Result(entries: entries) }
+
+        let reconciled = LendingReconciler.reconcile(entries: entries, updates: updates)
+        return Result(entries: reconciled.entries, changed: reconciled.changed)
+    }
+}

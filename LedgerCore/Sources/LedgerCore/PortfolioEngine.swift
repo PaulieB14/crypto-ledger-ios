@@ -1,10 +1,10 @@
 import Foundation
 
-/// One account's share of a pooled position.
+/// One account's share of a position.
 ///
-/// This is *provenance*, not a per-account cost basis. Lots pool across accounts
-/// (see `LotEngine`), so this only answers "where did these units arrive from",
-/// which is what tells staked ETH apart from wallet ETH on screen.
+/// Lots themselves are per account (see `LotEngine`). This is the quantity
+/// split the row shows — wallet ETH beside staked ETH, or which market a
+/// debt sits in — so the total and the parts describe the same units.
 public struct AccountQty: Identifiable, Hashable, Sendable {
     public let accountID: String
     public let qty: Decimal
@@ -22,12 +22,18 @@ public struct Position: Identifiable, Hashable, Sendable {
     public let costBasisUSD: Decimal
     public let spotUSD: Decimal?
     /// Where this position's units came from, when they came from more than one
-    /// place. Empty when everything shares one account — and also empty when the
-    /// parts stop summing to the whole, because sub-rows that do not add up to
-    /// the row above them read as a bug rather than as information.
+    /// place. Empty when everything shares one account. Kept even when a later
+    /// sale makes the parts disagree with the total — hiding them was dropping
+    /// the only record of which wallet still holds what.
     public let byAccount: [AccountQty]
+    /// True when these units are owed, not held. Market value is then subtracted
+    /// from net worth. Quantity stays positive; the sign lives here.
+    public var isLiability: Bool = false
+    /// Lowest health factor among the loan legs that make up this debt, when
+    /// the protocol reported one.
+    public var healthFactor: Decimal? = nil
 
-    public var id: String { assetID }
+    public var id: String { isLiability ? "debt:\(assetID)" : assetID }
     public var marketValueUSD: Decimal? { spotUSD.map { qty * $0 } }
     public var unrealizedUSD: Decimal? { marketValueUSD.map { $0 - costBasisUSD } }
 }
@@ -86,22 +92,26 @@ public struct PortfolioEngine: Sendable {
         let match = matcher.match(entries)
 
         var fees: [String: Decimal] = [:]
+        var feeAccounts: [String: String] = [:]
         for candidate in match.matched where candidate.differential > 0 {
             fees[candidate.inbound.id] = candidate.differential
+            // The fee left the source wallet. The destination has no lots yet.
+            feeAccounts[candidate.inbound.id] = candidate.outbound.accountID
         }
 
-        let lots = LotEngine(method: method).replay(match.entries, transferFees: fees)
+        let lots = LotEngine(method: method).replay(
+            match.entries, transferFees: fees, feeAccounts: feeAccounts)
 
         var balances: [String: Decimal] = [:]
-        for entry in match.entries {
+        for entry in match.entries where !entry.kind.isLiability {
             balances[entry.assetID, default: 0] += entry.qtyDelta
         }
 
-        // Provenance is summed from the entries themselves, not from lots: lots
-        // are pooled per asset by design, so they cannot say which account a
-        // unit came from.
+        // Provenance is the entry fold per account. Lots are already per
+        // account, but a position row is still one asset, and this is what
+        // tells wallet ETH from staked ETH underneath it.
         var acctQty: [String: [String: Decimal]] = [:]
-        for entry in match.entries {
+        for entry in match.entries where !entry.kind.isLiability {
             acctQty[entry.assetID, default: [:]][entry.accountID, default: 0] += entry.qtyDelta
         }
 
@@ -122,14 +132,18 @@ public struct PortfolioEngine: Sendable {
                          qty: qty,
                          costBasisUSD: lotBasis[assetID] ?? 0,
                          spotUSD: price,
-                         byAccount: Self.provenance(acctQty[assetID], total: qty))
+                         byAccount: Self.provenance(acctQty[assetID]))
             )
         }
         positions.sort {
             ($0.marketValueUSD ?? 0, $0.assetID) > ($1.marketValueUSD ?? 0, $1.assetID)
         }
 
-        let cryptoValue = positions.reduce(Decimal(0)) { $0 + ($1.marketValueUSD ?? 0) }
+        positions.append(contentsOf: Self.liabilities(in: match.entries, spot: spot, missing: &missingPrice))
+
+        let assets = positions.filter { !$0.isLiability }
+        let cryptoValue = assets.reduce(Decimal(0)) { $0 + ($1.marketValueUSD ?? 0) }
+        let debtValue = positions.filter(\.isLiability).reduce(Decimal(0)) { $0 + ($1.marketValueUSD ?? 0) }
         let unrealized = positions.reduce(Decimal(0)) { $0 + ($1.unrealizedUSD ?? 0) }
         let cash = balances["USD"] ?? 0
 
@@ -144,12 +158,14 @@ public struct PortfolioEngine: Sendable {
             positions: positions,
             cashUSD: cash,
             cryptoValueUSD: cryptoValue,
-            // Net worth counts crypto plus cash you actually have. Cash can go
-            // negative when a "buy" spends money that was never added as cash
-            // (a common tracker case) — that's a phantom debt, not real net
-            // worth, so it floors at zero here. Cost basis still records the
-            // full price, so gains stay correct. Raw `cashUSD` is kept as-is.
-            netWorthUSD: cryptoValue + Swift.max(0, cash),
+            // Net worth counts crypto plus cash you actually have, minus debt.
+            // Cash can go negative when a "buy" spends money that was never
+            // added as cash (a common tracker case) — that's a phantom debt,
+            // not real net worth, so it floors at zero here. A crypto-backed
+            // loan is a liability entry, not that negative cash, and it does
+            // reduce net worth. Cost basis still records the full price, so
+            // gains stay correct. Raw `cashUSD` is kept as-is.
+            netWorthUSD: cryptoValue + Swift.max(0, cash) - debtValue,
             realized: lots.realized,
             realizedShortTermUSD: lots.realizedShortTermUSD,
             realizedLongTermUSD: lots.realizedLongTermUSD,
@@ -158,30 +174,72 @@ public struct PortfolioEngine: Sendable {
             unpairedTransfers: match.unpaired,
             uncoveredDisposals: lots.uncoveredDisposals,
             unpricedAcquisitions: lots.unpricedAcquisitions,
-            assetsMissingPrice: missingPrice.sorted(),
+            assetsMissingPrice: Array(Set(missingPrice)).sorted(),
             reconciles: reconciles
         )
     }
 
-    /// Per-account provenance for one asset, or empty when showing it would mislead.
+    /// Per-account quantities for one asset.
     ///
-    /// Disposals draw from pooled lots rather than from the account the units
-    /// actually left, so after a sale the per-account parts can stop summing to
-    /// the pooled total. Rather than render a breakdown that contradicts the row
-    /// it sits under, say nothing.
-    static func provenance(_ raw: [String: Decimal]?, total: Decimal) -> [AccountQty] {
+    /// One account has nothing to disambiguate, so the caption stays empty.
+    /// More than one is always shown, even if a sale left the parts short of
+    /// the row total — discarding them threw away which wallet still holds
+    /// the remainder. `requireMultiple` is false for a debt row, where the
+    /// single account name ("Aave Ethereum") is the point of the caption.
+    static func provenance(_ raw: [String: Decimal]?, requireMultiple: Bool = true) -> [AccountQty] {
         guard let raw else { return [] }
         let positive = raw.filter { $0.value > 0 }
-        guard positive.count > 1 else { return [] }
-
-        let sum = positive.values.reduce(0, +)
-        guard sum > 0 else { return [] }
-        let drift = sum > total ? sum - total : total - sum
-        guard drift * 10_000 <= sum else { return [] }   // agree to within 0.01%
-
+        if requireMultiple {
+            guard positive.count > 1 else { return [] }
+        } else if positive.isEmpty {
+            return []
+        }
         return positive
             .map { AccountQty(accountID: $0.key, qty: $0.value) }
             .sorted { $0.qty == $1.qty ? $0.accountID < $1.accountID : $0.qty > $1.qty }
+    }
+
+    /// Debt positions. Not lots: interest increasing the amount owed must not
+    /// open a zero-cost acquisition the way a vault's balance growth does.
+    private static func liabilities(
+        in entries: [LedgerEntry],
+        spot: [String: Decimal],
+        missing: inout [String]
+    ) -> [Position] {
+        struct Bucket {
+            var qty = Decimal(0)
+            var basis = Decimal(0)
+            var accounts: [String: Decimal] = [:]
+            var health: Decimal?
+        }
+        var byAsset: [String: Bucket] = [:]
+        for entry in entries where entry.kind.isLiability {
+            let owed = entry.qtyDelta < 0 ? -entry.qtyDelta : entry.qtyDelta
+            guard owed > 0 else { continue }
+            var b = byAsset[entry.assetID] ?? Bucket()
+            b.qty += owed
+            if let price = entry.unitPriceUSD { b.basis += owed * price }
+            b.accounts[entry.accountID, default: 0] += owed
+            if let hf = entry.healthFactor {
+                b.health = b.health.map { min($0, hf) } ?? hf
+            }
+            byAsset[entry.assetID] = b
+        }
+        var rows: [Position] = []
+        for (assetID, b) in byAsset where b.qty > 0 {
+            let price = spot[assetID]
+            if price == nil { missing.append(assetID) }
+            rows.append(Position(
+                assetID: assetID,
+                qty: b.qty,
+                costBasisUSD: b.basis,
+                spotUSD: price,
+                byAccount: provenance(b.accounts, requireMultiple: false),
+                isLiability: true,
+                healthFactor: b.health))
+        }
+        rows.sort { ($0.marketValueUSD ?? 0, $0.assetID) > ($1.marketValueUSD ?? 0, $1.assetID) }
+        return rows
     }
 
 }
