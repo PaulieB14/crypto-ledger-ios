@@ -1,4 +1,5 @@
 import Foundation
+import LedgerCore
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -40,6 +41,8 @@ enum Lending {
         /// `WalletChain.rawValue`, so a refresh can tell Ethereum from Base.
         var chain: String
         var chainLabel: String
+        /// Lowercased address this position was read for. Part of the account key.
+        var wallet: String
         var collateral: [Leg]
         var debt: [Leg]
         var collateralUSD: Decimal
@@ -53,8 +56,16 @@ enum Lending {
         /// treated as "you repaid".
         var fullyRead: Bool
 
-        var id: String { "\(protocolName):\(chain)" }
-        var accountLabel: String { "\(protocolName) \(chainLabel)" }
+        var id: String { "\(protocolName):\(chain):\(wallet)" }
+        /// Label from before the key included a wallet (`Aave Ethereum`).
+        /// Refresh still matches it for a single-wallet row.
+        var legacyAccountLabel: String {
+            LendingAccountKey.legacyAccountID(protocolName: protocolName, chainLabel: chainLabel)
+        }
+        /// Protocol, chain, and wallet. Two addresses on one market are not one account.
+        var accountLabel: String {
+            LendingAccountKey.accountID(protocolName: protocolName, chainLabel: chainLabel, wallet: wallet)
+        }
         var netUSD: Decimal { collateralUSD - debtUSD }
     }
 
@@ -219,6 +230,7 @@ enum Lending {
             protocolName: market.protocolName,
             chain: market.chain.rawValue,
             chainLabel: market.chain.label,
+            wallet: user,
             collateral: collateral.sorted { $0.amount > $1.amount },
             debt: debt.sorted { $0.amount > $1.amount },
             collateralUSD: collateralUSD,
