@@ -191,6 +191,28 @@ struct WalletImportView: View {
     private func stakeKey(_ p: StakingPosition) -> String { "stake:" + p.id }
     private func loanKey(_ p: Lending.Position) -> String { "loan:" + p.id }
 
+    /// One imported loan leg, priced at the oracle's current USD price, or the
+    /// catalog's when the market has none. This has to be a method of the view.
+    /// A local function inside `flatMap` is a synchronous nonisolated context,
+    /// and `CoinCatalog.price(for:)` is isolated to the main actor with the
+    /// rest of the UI. Marking the whole catalog `nonisolated` would hide that.
+    private func loanLegDraft(
+        _ leg: Lending.Leg,
+        account: String,
+        healthFactor: Decimal?,
+        kind: TransactionDraft.Kind
+    ) -> TransactionDraft {
+        var d = TransactionDraft()
+        d.kind = kind
+        d.asset = leg.symbol
+        d.account = account
+        d.quantityText = UserNumber.text(leg.amount)
+        d.healthFactor = healthFactor
+        let price = leg.unitPriceUSD ?? catalog.price(for: leg.symbol)
+        if let price { d.priceText = UserNumber.text(price) }
+        return d
+    }
+
     private func stakingRow(_ p: StakingPosition) -> some View {
         let isOn = selected.contains(stakeKey(p))
         return Button {
@@ -483,24 +505,17 @@ struct WalletImportView: View {
         // the same watchlist drives the wallet-balance refresh, so anyone who
         // imported a plain wallet registered no address, and their balances
         // silently never refreshed at all.
+
+        // Stamped at the oracle's current price. No historical replay:
+        // the purchase price is editable after import.
         let loanDrafts: [TransactionDraft] = loans
             .filter { selected.contains(loanKey($0)) }
-            .flatMap { p -> [TransactionDraft] in
-                // Stamped at the oracle's current price. No historical replay:
-                // the purchase price is editable after import.
-                func draft(_ leg: Lending.Leg, kind: TransactionDraft.Kind) -> TransactionDraft {
-                    var d = TransactionDraft()
-                    d.kind = kind
-                    d.asset = leg.symbol
-                    d.account = p.accountLabel
-                    d.quantityText = UserNumber.text(leg.amount)
-                    d.healthFactor = p.healthFactor
-                    let price = leg.unitPriceUSD ?? catalog.price(for: leg.symbol)
-                    if let price { d.priceText = UserNumber.text(price) }
-                    return d
+            .flatMap { p in
+                p.collateral.map {
+                    loanLegDraft($0, account: p.accountLabel, healthFactor: p.healthFactor, kind: .balance)
+                } + p.debt.map {
+                    loanLegDraft($0, account: p.accountLabel, healthFactor: p.healthFactor, kind: .liability)
                 }
-                return p.collateral.map { draft($0, kind: .balance) }
-                    + p.debt.map { draft($0, kind: .liability) }
             }
         if !drafts.isEmpty || !stakeDrafts.isEmpty || !loanDrafts.isEmpty {
             HoldingsRefresh.remember(address: address)
