@@ -226,6 +226,13 @@ enum Lending {
         }
 
         guard !collateral.isEmpty || !debt.isEmpty else { return (true, nil) }
+        // Aave's account totals leave out supplies with collateral switched
+        // off, but those legs are still booked. Show what will be booked, and
+        // fall back to the account total only when a leg has no oracle price.
+        func total(_ legs: [Leg], fallback: Decimal) -> Decimal {
+            guard legs.allSatisfy({ $0.unitPriceUSD != nil }) else { return fallback }
+            return legs.reduce(Decimal(0)) { $0 + $1.amount * ($1.unitPriceUSD ?? 0) }
+        }
         return (true, Position(
             protocolName: market.protocolName,
             chain: market.chain.rawValue,
@@ -233,8 +240,8 @@ enum Lending {
             wallet: user,
             collateral: collateral.sorted { $0.amount > $1.amount },
             debt: debt.sorted { $0.amount > $1.amount },
-            collateralUSD: collateralUSD,
-            debtUSD: debtUSD,
+            collateralUSD: total(collateral, fallback: collateralUSD),
+            debtUSD: total(debt, fallback: debtUSD),
             healthFactor: health,
             representedTokens: represented,
             fullyRead: fullyRead))
