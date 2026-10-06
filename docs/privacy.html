@@ -17,7 +17,7 @@
 </head>
 <body>
 <h1>Privacy Policy — Argus Crypto Tracker</h1>
-<p class="eff">Effective August 29, 2026</p>
+<p class="eff">Effective October 6, 2026</p>
 
 <p>Argus is a crypto portfolio tracker built to keep your financial data private.
 The short version: <strong>we don't collect anything.</strong> There are no
@@ -35,7 +35,7 @@ uploaded to us or to anyone else. Deleting the app deletes your data.</p>
 
 <h2>Network requests</h2>
 <p>To show live prices, logos, news, and (only if you use the feature) wallet
-balances, Argus fetches <strong>public</strong> data from third-party services:</p>
+balances and loans, Argus fetches <strong>public</strong> data from third-party services:</p>
 <ul>
   <li><strong>CoinGecko</strong> — public market prices, coin logos, and price
     history for the chart on a holding.</li>
@@ -50,12 +50,17 @@ balances, Argus fetches <strong>public</strong> data from third-party services:<
     added, to read staked vault positions for it.</li>
   <li><strong>Plasma public RPC (rpc.plasma.to)</strong> — receives a public
     wallet address you have added, to read its native XPL balance.</li>
+  <li><strong>Public blockchain RPC nodes</strong> — receive a public wallet
+    address you have added, to read Aave and Spark lending positions (collateral
+    and debt) for it: PublicNode (<code>*.publicnode.com</code>, for Ethereum,
+    Base, Arbitrum, Optimism, Polygon, Gnosis and Scroll), Celo's Forno
+    (<code>forno.celo.org</code>), and zkSync (<code>mainnet.era.zksync.io</code>).</li>
 </ul>
 <p>Argus never asks for, and cannot accept, a seed phrase or private key. Only a
 public address is ever sent, and only to the services listed above.</p>
 <p><strong>When these requests happen.</strong> A wallet address is sent when you
 first paste it, and again when you open or return to the app, so that balances
-and staked amounts stay current. If you remove the holdings imported from an
+staked amounts and loan positions stay current. If you remove the holdings imported from an
 address, Argus stops sending it.</p>
 <p>A public wallet address is a pseudonymous identifier: it is not your name, but
 it is specific to you and is permanently visible on a public blockchain. The
