@@ -242,6 +242,43 @@ final class PortfolioStore {
         rebuildHistoryAfterLedgerChange()
     }
 
+    /// Edit a debt row. Only the part the user entered is replaced; legs
+    /// imported from a lending protocol keep their amount, because the next
+    /// refresh would put the on-chain amount back anyway, and merging the
+    /// two under one account would either drop the manual debt or stop the
+    /// loan refreshing. The price applies to both.
+    func setDebt(assetID: String, manualQuantity: Decimal, unitPriceUSD: Decimal) {
+        let sym = assetID.uppercased()
+        let isMine: (LedgerEntry) -> Bool = { $0.kind == .liability && $0.assetID == sym }
+        let manual = manualEntries.filter { isMine($0) && !LendingAccountKey.isImported($0.accountID) }
+        let account = manual.first?.accountID ?? "Manual"
+        manualEntries = manualEntries.compactMap { e in
+            guard isMine(e) else { return e }
+            guard LendingAccountKey.isImported(e.accountID) else { return nil }
+            return LedgerEntry(
+                id: e.id, sourceID: e.sourceID, externalRef: e.externalRef,
+                timestamp: e.timestamp, accountID: e.accountID, assetID: e.assetID,
+                qtyDelta: e.qtyDelta, kind: e.kind, unitPriceUSD: unitPriceUSD,
+                groupID: e.groupID, transferGroupID: e.transferGroupID,
+                healthFactor: e.healthFactor)
+        }
+        if manualQuantity > 0 {
+            var d = TransactionDraft()
+            d.kind = .liability
+            d.asset = sym
+            d.account = account
+            d.date = manual.map(\.timestamp).min() ?? .now
+            d.quantityText = UserNumber.text(manualQuantity)
+            d.priceText = UserNumber.text(unitPriceUSD)
+            manualEntries.append(contentsOf: d.makeEntries())
+        }
+        manualCount = manualEntries.count
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
+    }
+
     /// Replace a holding outright — set its quantity and cost basis to new
     /// values. Implemented by dropping the asset's manual entries (and paired
     /// cash legs) and recording one balance fact, so editing is clean for the

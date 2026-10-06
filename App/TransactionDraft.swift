@@ -35,7 +35,7 @@ struct TransactionDraft {
             case .sell: "Dispose crypto for cash"
             case .receive: "Crypto arrived (airdrop, transfer, reward)"
             case .deposit: "Fund your account with USD"
-            case .liability: "Amount owed against collateral"
+            case .liability: "A loan from an exchange, Morpho, or anywhere Argus can't read. It lowers your net worth."
             }
         }
 
@@ -106,6 +106,7 @@ struct TransactionDraft {
         switch kind {
         case .buy: fee > 0 ? "Total cost (incl. fee)" : "Total cost"
         case .sell: fee > 0 ? "You'll receive (after fee)" : "You'll receive"
+        case .liability: "Total owed"
         default: "Estimated value"
         }
     }

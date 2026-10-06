@@ -28,7 +28,7 @@ struct AddTransactionView: View {
         }
         // Seed the live price for the default coin so a balance holding is priced
         // from the moment the sheet opens (the catalog is usually already loaded).
-        if lockedKind == .balance, let p = catalog.price(for: initial.asset), p > 0 {
+        if lockedKind == .balance || lockedKind == .liability, let p = catalog.price(for: initial.asset), p > 0 {
             initial.priceText = UserNumber.text(p)
         }
         _draft = State(initialValue: initial)
@@ -48,7 +48,7 @@ struct AddTransactionView: View {
                 // price for the current asset — on appear (covers the pre-filled
                 // default, which an onChange would miss) and on every change,
                 // loading the catalog first if it isn't ready yet.
-                guard draft.kind == .balance else { return }
+                guard draft.kind == .balance || draft.kind == .liability else { return }
                 if catalog.coins.isEmpty { await catalog.load() }
                 if let p = catalog.price(for: draft.asset), p > 0 {
                     draft.priceText = UserNumber.text(p)
@@ -70,7 +70,11 @@ struct AddTransactionView: View {
     }
 
     private var navigationTitle: String {
-        lockedKind == .balance ? "Add Holding" : "New Transaction"
+        switch lockedKind {
+        case .balance: "Add Holding"
+        case .liability: "Add Loan"
+        default: "New Transaction"
+        }
     }
 
     // MARK: Sections
@@ -104,7 +108,7 @@ struct AddTransactionView: View {
             NavigationLink {
                 CoinPickerView(catalog: catalog) { coin in
                     draft.asset = coin.symbol
-                    if draft.kind.requiresPrice || draft.kind == .receive || draft.kind == .balance {
+                    if draft.kind.requiresPrice || draft.kind == .receive || draft.kind == .balance || draft.kind == .liability {
                         draft.priceText = UserNumber.text(coin.priceUSD)
                     }
                 }
@@ -136,6 +140,7 @@ struct AddTransactionView: View {
         switch draft.kind {
         case .deposit: "Amount"
         case .balance: "How much you hold"
+        case .liability: "What you owe"
         default: "Details"
         }
     }
@@ -143,7 +148,8 @@ struct AddTransactionView: View {
     private var amountSection: some View {
         Section(amountHeader) {
             decimalField(
-                label: draft.kind == .balance ? "Amount you own" : "Quantity",
+                label: draft.kind == .balance ? "Amount you own"
+                    : draft.kind == .liability ? "Amount you owe" : "Quantity",
                 text: $draft.quantityText,
                 placeholder: draft.kind.isCash ? "1000" : "0.5",
                 suffix: draft.kind.isCash ? "USD" : draft.asset.uppercased())
@@ -156,6 +162,12 @@ struct AddTransactionView: View {
             } else if draft.kind == .receive {
                 decimalField(label: "Cost / unit (optional)", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
+            } else if draft.kind == .liability {
+                decimalField(label: "Price per coin", text: $draft.priceText,
+                             placeholder: "0", suffix: "USD")
+                Text("What you owe is valued at the live price, like a holding. Add the collateral as a holding so net worth counts both.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else if draft.kind == .balance {
                 decimalField(label: "Cost per coin", text: $draft.priceText,
                              placeholder: "0", suffix: "USD")
@@ -177,7 +189,7 @@ struct AddTransactionView: View {
 
     private var detailSection: some View {
         Section {
-            LabeledContent("Account") {
+            LabeledContent(draft.kind == .liability ? "Lender" : "Account") {
                 TextField("Manual", text: $draft.account)
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()

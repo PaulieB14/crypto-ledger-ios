@@ -17,6 +17,18 @@ public enum LendingAccountKey {
     /// no separator, which is how they stay recognizable.
     public static let separator = " · "
 
+    /// Protocols the importer reads. Keep in step with `Lending.markets`.
+    public static let protocols = ["Aave", "Spark"]
+
+    /// True for an account a refresh rewrites from the chain
+    /// (`Aave Base · 0x…`). Its amount is not the user's to edit; it would be
+    /// put back on the next launch. Requires the wallet part, so a lender
+    /// typed by hand as "Aave Base" stays editable.
+    public static func isImported(_ accountID: String) -> Bool {
+        protocols.contains { accountID.hasPrefix($0 + " ") }
+            && accountID.contains(separator + "0x")
+    }
+
     /// `Aave Ethereum · 0xabc…` — protocol, chain label, full address.
     public static func accountID(protocolName: String, chainLabel: String, wallet: String) -> String {
         let legacy = legacyAccountID(protocolName: protocolName, chainLabel: chainLabel)

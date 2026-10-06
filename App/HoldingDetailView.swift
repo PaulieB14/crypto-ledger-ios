@@ -70,7 +70,11 @@ struct HoldingDetailView: View {
         }
         .sheet(isPresented: $showingEdit) {
             EditHoldingView(position: position) { qty, unitCost in
-                store.setHolding(assetID: position.assetID, quantity: qty, unitCostUSD: unitCost, liability: position.isLiability)
+                if position.isLiability {
+                    store.setDebt(assetID: position.assetID, manualQuantity: qty, unitPriceUSD: unitCost)
+                } else {
+                    store.setHolding(assetID: position.assetID, quantity: qty, unitCostUSD: unitCost)
+                }
                 dismiss()   // pop back; the list re-renders from the new snapshot
             } onDelete: {
                 store.removeAsset(position.assetID, liability: position.isLiability)

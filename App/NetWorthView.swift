@@ -13,6 +13,7 @@ struct NetWorthView: View {
     @State private var pendingAsset: String?
     @State private var showingWallet = false
     @State private var showingAdd = false
+    @State private var showingDebt = false
     @State private var showingImport = false
     @State private var showingHelp = false
     @State private var showingSettings = false
@@ -58,6 +59,11 @@ struct NetWorthView: View {
                                 Label("Import CSV…", systemImage: "square.and.arrow.down")
                             }
                         }
+                        Section("Add what you owe") {
+                            Button { showingDebt = true } label: {
+                                Label("Add a loan", systemImage: "minus.circle")
+                            }
+                        }
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
@@ -88,6 +94,12 @@ struct NetWorthView: View {
             }
             .sheet(isPresented: $showingAdd) {
                 AddTransactionView(catalog: catalog) { draft in
+                    store.addTransaction(draft)
+                    store.refreshPrices(from: catalog.spotMap)
+                }
+            }
+            .sheet(isPresented: $showingDebt) {
+                AddTransactionView(catalog: catalog, lockedKind: .liability) { draft in
                     store.addTransaction(draft)
                     store.refreshPrices(from: catalog.spotMap)
                 }
