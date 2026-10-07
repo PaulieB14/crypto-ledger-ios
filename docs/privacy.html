@@ -41,8 +41,9 @@ balances and loans, Argus fetches <strong>public</strong> data from third-party 
     history for the chart on a holding.</li>
   <li><strong>Coinpaprika</strong> — a fallback price source, used only when
     CoinGecko is unavailable.</li>
-  <li><strong>DefiLlama</strong> — prices for less common tokens, looked up by
-    the token's contract address. No wallet address is sent.</li>
+  <li><strong>DefiLlama</strong> — prices for less common tokens and for loan
+    collateral and debt, looked up by the token's contract address. No wallet
+    address is sent.</li>
   <li><strong>Google News</strong> — public headlines for a coin you open.</li>
   <li><strong>Public block explorers (Blockscout, and the Mode explorer)</strong>
     — receives a public wallet address you have added, to read its balances.</li>
@@ -51,16 +52,21 @@ balances and loans, Argus fetches <strong>public</strong> data from third-party 
   <li><strong>Plasma public RPC (rpc.plasma.to)</strong> — receives a public
     wallet address you have added, to read its native XPL balance.</li>
   <li><strong>Public blockchain RPC nodes</strong> — receive a public wallet
-    address you have added, to read Aave and Spark lending positions (collateral
-    and debt) for it: PublicNode (<code>*.publicnode.com</code>, for Ethereum,
-    Base, Arbitrum, Optimism, Polygon, Gnosis and Scroll), Celo's Forno
-    (<code>forno.celo.org</code>), and zkSync (<code>mainnet.era.zksync.io</code>).</li>
+    address you have added, to read Aave, Spark, Compound and Fluid lending
+    positions (collateral and debt) for it: PublicNode (<code>*.publicnode.com</code>,
+    for Ethereum, Base, Arbitrum, Optimism, Polygon, Gnosis and Scroll), Celo's
+    Forno (<code>forno.celo.org</code>), zkSync (<code>mainnet.era.zksync.io</code>),
+    and Unichain (<code>mainnet.unichain.org</code>).</li>
+  <li><strong>Morpho API (api.morpho.org)</strong> — receives a public wallet
+    address you have added, to read Morpho lending positions for it.</li>
 </ul>
 <p>Argus never asks for, and cannot accept, a seed phrase or private key. Only a
 public address is ever sent, and only to the services listed above.</p>
 <p><strong>When these requests happen.</strong> A wallet address is sent when you
 first paste it, and again when you open or return to the app, so that balances
-staked amounts and loan positions stay current. If you remove the holdings imported from an
+staked amounts and loan positions stay current. To notice a loan you
+opened after importing, Argus also checks every supported lending market for
+your addresses about once a month. If you remove the holdings imported from an
 address, Argus stops sending it.</p>
 <p>A public wallet address is a pseudonymous identifier: it is not your name, but
 it is specific to you and is permanently visible on a public blockchain. The

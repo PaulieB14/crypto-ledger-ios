@@ -134,7 +134,7 @@ train and rejects further uploads to it.
 - Plasma is native-balance only (see above).
 - Cost basis is per wallet. A matched transfer does not relocate lots.
 - Wallet import stamps today's price. It does not replay historical buys.
-- Crypto-backed loans (Aave v3, Spark) count as collateral minus debt. Morpho and Compound use the same position shape but are not wired yet. Any other loan can be added by hand (+ → Add a loan); its amount stays editable, while an imported loan's amount is read from the chain on each launch.
+- Crypto-backed loans (Aave v3, Spark, Compound v3, Fluid, Morpho) count as collateral minus debt. Imported loans refresh on each launch (only the markets they are on); a full sweep for new loans on watched wallets runs about monthly and is offered, never added silently. Fully repaid loans are cleared. Any other loan can be added by hand (+ → Add a loan); its amount stays editable, while an imported loan's amount is read from the chain on each launch.
 - Wallet import reads public explorers, so it inherits their coverage and uptime.
 
 ## License

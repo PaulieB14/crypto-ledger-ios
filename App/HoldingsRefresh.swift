@@ -289,30 +289,100 @@ extension HoldingsRefresh {
     /// address. Rows imported before that, labeled only `Aave Ethereum`, still
     /// match when just one wallet claims the label, and the rewrite stores
     /// the wallet key.
-    static func reconcileLending(entries: [LedgerEntry]) async -> Result {
+    static func reconcileLending(entries: [LedgerEntry]) async -> LendingRefresh {
         let addresses = watchedAddresses
-        guard !addresses.isEmpty else { return Result(entries: entries) }
+        guard !addresses.isEmpty else { return LendingRefresh(result: Result(entries: entries)) }
+
+        // Loans already in the ledger, as `protocol:chain` per wallet. These
+        // are re-read on every launch: debt and health factor must be current.
+        var known: [String: Set<String>] = [:]
+        for id in Set(entries.map(\.accountID)) {
+            guard let (proto, chain, wallet) = LendingAccountKey.parse(id),
+                  let c = WalletChain.allCases.first(where: { $0.label == chain }) else { continue }
+            known[wallet, default: []].insert(Lending.scopeKey(proto, c))
+        }
+        let accounts = Set(entries.map(\.accountID))
+        let dismissed = dismissedLoans
+
+        // Every protocol on every chain is a lot of calls; finding a loan
+        // opened since the last import can wait. Monthly, plus every manual
+        // import (which always sweeps).
+        let sweep = (lastLoanSweep.map { Date().timeIntervalSince($0) > loanSweepInterval }) ?? true
+        var swept = false
 
         var updates: [LendingRefreshUpdate] = []
+        var found: [Lending.Position] = []
         for address in addresses {
-            // nil is unreachable. An empty list is "no position", which is how
-            // a repaid loan gets cleared — but only for markets that answered.
-            guard let positions = await Lending.positions(address: address, chains: Array(WalletChain.allCases)) else { continue }
-            for position in positions {
-                let debt = Dictionary(position.debt.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
-                let collateral = Dictionary(position.collateral.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+            let wallet = LendingAccountKey.normalizedWallet(address)
+            let mine = known[wallet] ?? []
+            guard sweep || !mine.isEmpty else { continue }
+            let scan = await Lending.scan(address: address, chains: Array(WalletChain.allCases),
+                                         only: sweep ? nil : mine)
+            if sweep && !scan.answered.isEmpty { swept = true }
+            var seen = Set<String>()
+            for position in scan.positions {
+                seen.insert(Lending.scopeKey(position.protocolName, WalletChain(rawValue: position.chain) ?? .ethereum))
+                if accounts.contains(position.accountLabel) || accounts.contains(position.legacyAccountLabel) {
+                    let debt = Dictionary(position.debt.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+                    let collateral = Dictionary(position.collateral.map { ($0.symbol.uppercased(), $0.amount) }, uniquingKeysWith: +)
+                    updates.append(LendingRefreshUpdate(
+                        accountID: position.accountLabel,
+                        legacyAccountID: position.legacyAccountLabel,
+                        debt: debt,
+                        collateral: collateral,
+                        fullyRead: position.fullyRead,
+                        healthFactor: position.healthFactor))
+                } else if !dismissed.contains(position.id) {
+                    found.append(position)
+                }
+            }
+            // A market that answered with no position for a loan we hold is a
+            // repaid loan. Without this, a loan closed to zero was never
+            // cleared: there was no position to build an update from.
+            for key in mine where scan.answered.contains(key) && !seen.contains(key) {
+                let parts = key.split(separator: ":")
+                guard parts.count == 2, let chain = WalletChain(rawValue: String(parts[1])) else { continue }
+                let proto = String(parts[0])
                 updates.append(LendingRefreshUpdate(
-                    accountID: position.accountLabel,
-                    legacyAccountID: position.legacyAccountLabel,
-                    debt: debt,
-                    collateral: collateral,
-                    fullyRead: position.fullyRead,
-                    healthFactor: position.healthFactor))
+                    accountID: LendingAccountKey.accountID(protocolName: proto, chainLabel: chain.label, wallet: wallet),
+                    legacyAccountID: LendingAccountKey.legacyAccountID(protocolName: proto, chainLabel: chain.label),
+                    debt: [:], collateral: [:], fullyRead: true, healthFactor: nil))
             }
         }
-        guard !updates.isEmpty else { return Result(entries: entries) }
+        if swept { lastLoanSweep = Date() }
 
+        guard !updates.isEmpty else {
+            return LendingRefresh(result: Result(entries: entries), newLoans: found)
+        }
         let reconciled = LendingReconciler.reconcile(entries: entries, updates: updates)
-        return Result(entries: reconciled.entries, changed: reconciled.changed)
+        return LendingRefresh(result: Result(entries: reconciled.entries, changed: reconciled.changed),
+                              newLoans: found)
+    }
+
+    struct LendingRefresh: Sendable {
+        var result: Result
+        /// Positions on a watched wallet that are not in the ledger and were
+        /// not dismissed. Never added silently; the user is asked.
+        var newLoans: [Lending.Position] = []
+    }
+
+    static let loanSweepInterval: TimeInterval = 30 * 24 * 3600
+    private static let sweepKey = "argus.loans.lastSweep"
+    private static let dismissedKey = "argus.loans.dismissed"
+
+    static var lastLoanSweep: Date? {
+        get { UserDefaults.standard.object(forKey: sweepKey) as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: sweepKey) }
+    }
+
+    /// `Position.id`s the user said no to. Not offered again.
+    static var dismissedLoans: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: dismissedKey) ?? [])
+    }
+
+    static func dismissLoan(_ id: String) {
+        var all = dismissedLoans
+        all.insert(id)
+        UserDefaults.standard.set(Array(all), forKey: dismissedKey)
     }
 }

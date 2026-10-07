@@ -6,6 +6,8 @@ import SwiftUI
 struct WalletImportView: View {
     @Environment(\.dismiss) private var dismiss
     var catalog: CoinCatalog
+    /// Debts the user typed in by hand, to warn before counting one twice.
+    var manualDebts: Set<String> = []
     let onImport: ([TransactionDraft]) -> Void
 
     @State private var address = ""
@@ -162,7 +164,7 @@ struct WalletImportView: View {
                 } header: {
                     Text("Loans")
                 } footer: {
-                    Text("Collateral minus what you owe. Receipt tokens (aTokens, debt tokens) are left out of the list below so they are not counted twice. Added at the protocol's current price — tap the holding afterwards to set what you actually paid.")
+                    Text("Collateral minus what you owe, from Aave, Spark, Compound, Fluid and Morpho. Receipt tokens (aTokens, cTokens, debt tokens) are left out of the list below so they are not counted twice. Added at the protocol's current price — tap the holding afterwards to set what you actually paid.")
                 }
             }
             Section {
@@ -190,28 +192,6 @@ struct WalletImportView: View {
     /// contract, so its id could otherwise collide with a token holding's.
     private func stakeKey(_ p: StakingPosition) -> String { "stake:" + p.id }
     private func loanKey(_ p: Lending.Position) -> String { "loan:" + p.id }
-
-    /// One imported loan leg, priced at the oracle's current USD price, or the
-    /// catalog's when the market has none. This has to be a method of the view.
-    /// A local function inside `flatMap` is a synchronous nonisolated context,
-    /// and `CoinCatalog.price(for:)` is isolated to the main actor with the
-    /// rest of the UI. Marking the whole catalog `nonisolated` would hide that.
-    private func loanLegDraft(
-        _ leg: Lending.Leg,
-        account: String,
-        healthFactor: Decimal?,
-        kind: TransactionDraft.Kind
-    ) -> TransactionDraft {
-        var d = TransactionDraft()
-        d.kind = kind
-        d.asset = leg.symbol
-        d.account = account
-        d.quantityText = UserNumber.text(leg.amount)
-        d.healthFactor = healthFactor
-        let price = leg.unitPriceUSD ?? catalog.price(for: leg.symbol)
-        if let price { d.priceText = UserNumber.text(price) }
-        return d
-    }
 
     private func stakingRow(_ p: StakingPosition) -> some View {
         let isOn = selected.contains(stakeKey(p))
@@ -266,6 +246,11 @@ struct WalletImportView: View {
                 if let hf = p.healthFactor {
                     Text("Health " + hf.formatted(.number.precision(.fractionLength(2))))
                         .font(.caption).foregroundStyle(hf < 1.1 ? .orange : .secondary)
+                }
+                let dup = Lending.overlap(p, manualDebts: manualDebts)
+                if !dup.isEmpty {
+                    Text("You already added a \(dup.joined(separator: ", ")) debt by hand. If it's this loan, remove that one after importing so it isn't counted twice.")
+                        .font(.caption).foregroundStyle(.orange)
                 }
             }
         }
@@ -510,13 +495,7 @@ struct WalletImportView: View {
         // the purchase price is editable after import.
         let loanDrafts: [TransactionDraft] = loans
             .filter { selected.contains(loanKey($0)) }
-            .flatMap { p in
-                p.collateral.map {
-                    loanLegDraft($0, account: p.accountLabel, healthFactor: p.healthFactor, kind: .balance)
-                } + p.debt.map {
-                    loanLegDraft($0, account: p.accountLabel, healthFactor: p.healthFactor, kind: .liability)
-                }
-            }
+            .flatMap { Lending.drafts(for: $0) { catalog.price(for: $0) } }
         if !drafts.isEmpty || !stakeDrafts.isEmpty || !loanDrafts.isEmpty {
             HoldingsRefresh.remember(address: address)
         }

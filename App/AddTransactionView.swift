@@ -22,6 +22,11 @@ struct AddTransactionView: View {
         self.onSave = onSave
         var initial = TransactionDraft()
         if let lockedKind { initial.kind = lockedKind }
+        // Most loans are stablecoins borrowed against something else.
+        if lockedKind == .liability {
+            initial.asset = "USDC"
+            initial.account = ""
+        }
         // Opened from a tapped coin: start on that asset, not the default.
         if let preselectedAsset, !preselectedAsset.isEmpty {
             initial.asset = preselectedAsset.uppercased()
@@ -38,8 +43,13 @@ struct AddTransactionView: View {
         NavigationStack {
             Form {
                 typeSection
-                if draft.kind.isCrypto { assetSection }
-                amountSection
+                if draft.kind == .liability {
+                    borrowedSection
+                    collateralSection
+                } else {
+                    if draft.kind.isCrypto { assetSection }
+                    amountSection
+                }
                 detailSection
                 if let est = draft.estimatedUSD { estimateSection(est) }
             }
@@ -60,7 +70,11 @@ struct AddTransactionView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { onSave(draft); dismiss() }
+                    Button("Add") {
+                        // A blank lender would file the loan under "".
+                        if draft.account.trimmingCharacters(in: .whitespaces).isEmpty { draft.account = "Manual" }
+                        onSave(draft); dismiss()
+                    }
                         .fontWeight(.semibold)
                         .disabled(!draft.isValid)
                 }
@@ -136,6 +150,65 @@ struct AddTransactionView: View {
         }
     }
 
+    // MARK: Loan
+
+    private func coinLink(_ symbol: String, placeholder: String, onPick: @escaping (CoinMarket) -> Void) -> some View {
+        NavigationLink {
+            CoinPickerView(catalog: catalog, onPick: onPick)
+        } label: {
+            HStack(spacing: 12) {
+                AssetBadge(symbol: symbol.isEmpty ? "?" : symbol,
+                           imageURL: catalog.imageURL(for: symbol))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(symbol.isEmpty ? placeholder : symbol).fontWeight(.medium)
+                    if let p = catalog.price(for: symbol) {
+                        Text("Live · \(p.formatted(.currency(code: "USD")))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var borrowedSection: some View {
+        Section {
+            coinLink(draft.asset, placeholder: "Choose a coin") { coin in
+                draft.asset = coin.symbol
+                draft.priceText = UserNumber.text(coin.priceUSD)
+            }
+            decimalField(label: "Amount you owe", text: $draft.quantityText,
+                         placeholder: "5000", suffix: draft.asset.uppercased())
+            decimalField(label: "Price per coin", text: $draft.priceText,
+                         placeholder: "1", suffix: "USD")
+        } header: {
+            Text("You borrowed")
+        } footer: {
+            Text("Borrowing on Aave, Spark, Compound, Fluid or Morpho? Use Import from wallet instead — it reads the exact amount and keeps it current.")
+        }
+    }
+
+    private var collateralSection: some View {
+        Section {
+            coinLink(draft.collateralAsset, placeholder: "None") { coin in
+                draft.collateralAsset = coin.symbol
+                draft.collateralPriceText = UserNumber.text(coin.priceUSD)
+            }
+            if !draft.collateralAsset.isEmpty {
+                decimalField(label: "Amount", text: $draft.collateralQuantityText,
+                             placeholder: "0.1", suffix: draft.collateralAsset.uppercased())
+                Button("No collateral", role: .destructive) {
+                    draft.collateralAsset = ""
+                    draft.collateralQuantityText = ""
+                    draft.collateralPriceText = ""
+                }
+            }
+        } header: {
+            Text("Against collateral (optional)")
+        } footer: {
+            Text("Can be a different coin from the loan, like USDC borrowed against BTC. Only add it here if it isn't already in your holdings, or it will be counted twice.")
+        }
+    }
+
     private var amountHeader: String {
         switch draft.kind {
         case .deposit: "Amount"
@@ -190,7 +263,7 @@ struct AddTransactionView: View {
     private var detailSection: some View {
         Section {
             LabeledContent(draft.kind == .liability ? "Lender" : "Account") {
-                TextField("Manual", text: $draft.account)
+                TextField(draft.kind == .liability ? "e.g. Coinbase" : "Manual", text: $draft.account)
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
             }

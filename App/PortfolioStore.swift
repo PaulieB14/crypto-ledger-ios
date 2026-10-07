@@ -73,6 +73,9 @@ final class PortfolioStore {
     private var spot: [String: Decimal] = [:]
     /// Positions the launch refresh moved, for a one-line note in the UI.
     private(set) var holdingUpdates: [String] = []
+    /// Loans found on a watched wallet that are not in the ledger yet.
+    /// Offered, never added on their own.
+    private(set) var newLoans: [Lending.Position] = []
 
     private let initialSpot: [String: Decimal]
     private let aggregator: SourceAggregator
@@ -152,6 +155,22 @@ final class PortfolioStore {
     }
 
     /// Bulk-append transactions (e.g. a CSV import) and re-derive once.
+    /// Add a loan the launch refresh found.
+    func acceptNewLoan(_ p: Lending.Position) {
+        newLoans.removeAll { $0.id == p.id }
+        addTransactions(Lending.drafts(for: p) { [spot] in spot[$0.uppercased()] })
+    }
+
+    func dismissNewLoan(_ p: Lending.Position) {
+        newLoans.removeAll { $0.id == p.id }
+        HoldingsRefresh.dismissLoan(p.id)
+    }
+
+    /// Debt symbols entered by hand, for the "counted twice?" warning.
+    var manualDebtSymbols: Set<String> {
+        Set(manualEntries.filter { $0.kind == .liability && !LendingAccountKey.isImported($0.accountID) }.map(\.assetID))
+    }
+
     func addTransactions(_ drafts: [TransactionDraft]) {
         guard !drafts.isEmpty else { return }
         for d in drafts {
@@ -181,7 +200,9 @@ final class PortfolioStore {
             updates += staked.changed.map(Self.describe)
         }
 
-        let loans = await HoldingsRefresh.reconcileLending(entries: manualEntries)
+        let lending = await HoldingsRefresh.reconcileLending(entries: manualEntries)
+        let loans = lending.result
+        newLoans = lending.newLoans
         if !loans.isEmpty {
             manualEntries = loans.entries
             updates += loans.changed.map(Self.describe)

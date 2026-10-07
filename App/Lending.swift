@@ -19,8 +19,8 @@ import FoundationNetworking
 /// liability, not a deposit and not a sale.
 ///
 /// The position shape is protocol-agnostic (collateral legs, debt legs, an
-/// optional health factor) so Morpho or Compound can fill it later. What is
-/// wired today is Aave v3, plus Spark, which speaks the same Pool ABI.
+/// optional health factor). Aave v3 and Spark (same Pool ABI) are read here;
+/// Compound v3, Fluid and Morpho live in LendingProtocols.swift.
 ///
 /// Prices are the protocol oracle's current price, not a replay of the borrow.
 /// Purchase price is editable afterwards; inventing one from history would be
@@ -72,32 +72,64 @@ enum Lending {
     /// Nil only when no market could be reached. An empty array means every
     /// market that was asked answered, and none of them has a position.
     static func positions(address: String, chains: [WalletChain]) async -> [Position]? {
-        let addr = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard isValidEVMAddress(addr) else { return [] }
-        let wanted = Set(chains)
-        let markets = Self.markets.filter { wanted.contains($0.chain) }
-        guard !markets.isEmpty else { return [] }
+        let scan = await scan(address: address, chains: chains)
+        return scan.answered.isEmpty ? nil : scan.positions
+    }
 
-        var out: [Position] = []
-        var reachedAny = false
-        await withTaskGroup(of: (Bool, Position?).self) { group in
-            for market in markets {
-                group.addTask { await fetch(market: market, user: addr) }
+    /// What one read of a wallet found, and which `protocol:chain` pairs
+    /// answered. A pair that answered with no position is a repaid loan; a
+    /// pair that did not answer says nothing.
+    struct Scan: Sendable {
+        var positions: [Position] = []
+        var answered: Set<String> = []
+    }
+
+    static func scopeKey(_ protocolName: String, _ chain: WalletChain) -> String {
+        "\(protocolName):\(chain.rawValue)"
+    }
+
+    /// Every protocol on `chains`, or only the `protocol:chain` pairs in
+    /// `only` when given — a launch refresh asks just the markets a wallet
+    /// already has loans on.
+    static func scan(address: String, chains: [WalletChain], only: Set<String>? = nil) async -> Scan {
+        let addr = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard isValidEVMAddress(addr) else { return Scan() }
+        let wanted = Set(chains)
+        let want: @Sendable (String, WalletChain) -> Bool = { name, chain in
+            wanted.contains(chain) && (only?.contains(scopeKey(name, chain)) ?? true)
+        }
+
+        let aaveMarkets = Self.markets.filter { want($0.protocolName, $0.chain) }
+        async let compound = compoundScan(user: addr, want: want)
+        async let fluid = fluidScan(user: addr, want: want)
+        async let morpho = morphoScan(user: addr, want: want)
+
+        var out = Scan()
+        await withTaskGroup(of: (Market, Bool, Position?).self) { group in
+            for market in aaveMarkets {
+                group.addTask {
+                    let (ok, p) = await fetch(market: market, user: addr)
+                    return (market, ok, p)
+                }
             }
-            for await (ok, position) in group {
-                if ok { reachedAny = true }
-                if let position { out.append(position) }
+            for await (market, ok, position) in group {
+                if ok { out.answered.insert(scopeKey(market.protocolName, market.chain)) }
+                if let position { out.positions.append(position) }
             }
         }
-        guard reachedAny else { return nil }
-        return out.sorted { $0.netUSD > $1.netUSD }
+        for part in await [compound, fluid, morpho] {
+            out.positions += part.positions
+            out.answered.formUnion(part.answered)
+        }
+        out.positions.sort { $0.netUSD > $1.netUSD }
+        return out
     }
 
     // MARK: - Markets
 
     /// One Aave-style pool. Data provider and oracle are discovered from the
     /// pool's addresses provider, so a fork only needs the pool address.
-    private struct Market: Sendable {
+    struct Market: Sendable {
         let protocolName: String
         let chain: WalletChain
         let pool: String
@@ -249,13 +281,13 @@ enum Lending {
 
     // MARK: - JSON-RPC / ABI
 
-    private static func addressCall(rpc: String, to: String, selector: String) async -> String? {
+    static func addressCall(rpc: String, to: String, selector: String) async -> String? {
         guard let w = await ethCall(rpc: rpc, to: to, data: callData(selector)), let first = w.first else { return nil }
         let a = address(fromWord: first)
         return isZero(a) ? nil : a
     }
 
-    private static func reservesList(rpc: String, pool: String) async -> [String]? {
+    static func reservesList(rpc: String, pool: String) async -> [String]? {
         guard let w = await ethCall(rpc: rpc, to: pool, data: "0xd1946dbc"),
               let first = w.first else { return nil }
         let offset = int(uint(first) / 32)
@@ -267,7 +299,7 @@ enum Lending {
 
     /// Hex words of an eth_call result, without the 0x. Nil if the node did
     /// not answer — which the caller must not confuse with a zero balance.
-    private static func ethCall(rpc: String, to: String, data: String) async -> [String]? {
+    static func ethCall(rpc: String, to: String, data: String) async -> [String]? {
         guard let url = URL(string: rpc) else { return nil }
         var req = URLRequest(url: url, timeoutInterval: 20)
         req.httpMethod = "POST"
@@ -294,33 +326,33 @@ enum Lending {
         return words
     }
 
-    private static func callData(_ selector: String, _ words: String = "") -> String {
+    static func callData(_ selector: String, _ words: String = "") -> String {
         "0x" + selector + words
     }
 
-    private static func addressWord(_ address: String) -> String {
+    static func addressWord(_ address: String) -> String {
         let hex = address.lowercased().hasPrefix("0x") ? String(address.lowercased().dropFirst(2)) : address.lowercased()
         return String(repeating: "0", count: max(0, 64 - hex.count)) + hex
     }
 
-    private static func address(fromWord word: String) -> String {
+    static func address(fromWord word: String) -> String {
         "0x" + word.suffix(40).lowercased()
     }
 
-    private static func isZero(_ address: String) -> Bool {
+    static func isZero(_ address: String) -> Bool {
         address == "0x" + String(repeating: "0", count: 40)
     }
 
-    private static func int(_ value: Decimal) -> Int {
+    static func int(_ value: Decimal) -> Int {
         Int(truncating: NSDecimalNumber(decimal: value))
     }
 
-    private static func tokenDecimals(_ value: Decimal) -> Int? {
+    static func tokenDecimals(_ value: Decimal) -> Int? {
         let n = int(value)
         return (0...36).contains(n) ? n : nil
     }
 
-    private static func uint(_ word: String) -> Decimal {
+    static func uint(_ word: String) -> Decimal {
         var value = Decimal(0)
         for ch in word {
             guard let n = ch.hexDigitValue else { return 0 }
@@ -330,7 +362,7 @@ enum Lending {
     }
 
     /// `symbol()` is a string on most tokens and a bytes32 on a few old ones.
-    private static func decodeSymbol(_ words: [String]) -> String? {
+    static func decodeSymbol(_ words: [String]) -> String? {
         guard let first = words.first else { return nil }
         if words.count == 1, let byte = first.first, byte != "0" {
             let raw = Data(Data(hex: first).prefix { $0 != 0 })
@@ -345,7 +377,7 @@ enum Lending {
         return String(data: bytes, encoding: .utf8)?.trimmingCharacters(in: .whitespaces)
     }
 
-    private static func pow10(_ n: Int) -> Decimal {
+    static func pow10(_ n: Int) -> Decimal {
         var r = Decimal(1)
         for _ in 0..<max(0, n) { r *= 10 }
         return r

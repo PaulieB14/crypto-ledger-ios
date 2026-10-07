@@ -35,7 +35,7 @@ struct TransactionDraft {
             case .sell: "Dispose crypto for cash"
             case .receive: "Crypto arrived (airdrop, transfer, reward)"
             case .deposit: "Fund your account with USD"
-            case .liability: "A loan from an exchange, Morpho, or anywhere Argus can't read. It lowers your net worth."
+            case .liability: "A loan Argus can't read from your wallet — an exchange, a bank, a friend. It lowers your net worth."
             }
         }
 
@@ -65,6 +65,14 @@ struct TransactionDraft {
     var date: Date = .now
     /// Set on an imported loan. Ignored by every other kind.
     var healthFactor: Decimal? = nil
+
+    /// A hand-entered loan's collateral, when it is not already a holding:
+    /// a USDC loan against BTC sent to the lender. Debt and collateral are
+    /// separate coins. Ignored by every other kind.
+    var collateralAsset: String = ""
+    var collateralQuantityText: String = ""
+    var collateralPriceText: String = ""
+    var collateralQuantity: Decimal? { UserNumber.decimal(collateralQuantityText) }
 
     var quantity: Decimal? { UserNumber.decimal(quantityText) }
     var price: Decimal? { UserNumber.decimal(priceText) }
@@ -165,7 +173,13 @@ struct TransactionDraft {
         case .liability:
             // Negative quantity, and not a disposal. Interest later makes this
             // more negative; it must not become a lot.
-            return [entry(asset, -q, .liability, price)]
+            var out = [entry(asset, -q, .liability, price)]
+            // Collateral under the same lender, so the two read as one loan.
+            let col = collateralAsset.trimmingCharacters(in: .whitespaces).uppercased()
+            if !col.isEmpty, let cq = collateralQuantity, cq > 0 {
+                out.append(entry(col, cq, .airdrop, UserNumber.decimal(collateralPriceText)))
+            }
+            return out
         }
     }
 

@@ -18,7 +18,18 @@ public enum LendingAccountKey {
     public static let separator = " · "
 
     /// Protocols the importer reads. Keep in step with `Lending.markets`.
-    public static let protocols = ["Aave", "Spark"]
+    public static let protocols = ["Aave", "Spark", "Compound", "Fluid", "Morpho"]
+
+    /// `Aave Base · 0xabc` → ("Aave", "Base", "0xabc"). Nil for anything
+    /// that is not an imported loan account.
+    public static func parse(_ accountID: String) -> (protocolName: String, chainLabel: String, wallet: String)? {
+        guard isImported(accountID) else { return nil }
+        let parts = accountID.components(separatedBy: separator)
+        guard parts.count == 2, let space = parts[0].firstIndex(of: " ") else { return nil }
+        let proto = String(parts[0][..<space])
+        let chain = String(parts[0][parts[0].index(after: space)...])
+        return (proto, chain, normalizedWallet(parts[1]))
+    }
 
     /// True for an account a refresh rewrites from the chain
     /// (`Aave Base · 0x…`). Its amount is not the user's to edit; it would be

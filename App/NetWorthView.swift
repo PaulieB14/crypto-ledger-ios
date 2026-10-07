@@ -87,7 +87,7 @@ struct NetWorthView: View {
                 }
             }
             .sheet(isPresented: $showingWallet) {
-                WalletImportView(catalog: catalog) { drafts in
+                WalletImportView(catalog: catalog, manualDebts: store.manualDebtSymbols) { drafts in
                     store.addTransactions(drafts)
                     store.refreshPrices(from: catalog.spotMap)
                 }
@@ -171,6 +171,10 @@ struct NetWorthView: View {
 
                 HeroCard(snapshot: s, points: store.historyPoints)
 
+                if !store.newLoans.isEmpty {
+                    newLoansCard
+                }
+
                 if s.hasOpenQuestions {
                     reviewCard(s)
                 }
@@ -183,6 +187,47 @@ struct NetWorthView: View {
             .frame(maxWidth: .infinity)
         }
         .background(backdrop)
+    }
+
+    /// Loans found on a wallet you imported, since the last import. Asked,
+    /// not added: a loan you entered by hand may be the same one.
+    private var newLoansCard: some View {
+        Card(title: store.newLoans.count == 1 ? "New loan found" : "New loans found",
+             systemImage: "minus.circle") {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(store.newLoans) { p in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("\(p.protocolName) \(p.chainLabel)").fontWeight(.semibold)
+                            Spacer()
+                            Text(p.netUSD, format: .currency(code: "USD")).monospacedDigit()
+                        }
+                        Text(newLoanCaption(p)).font(.caption).foregroundStyle(.secondary)
+                        let dup = Lending.overlap(p, manualDebts: store.manualDebtSymbols)
+                        if !dup.isEmpty {
+                            Text("You already added a \(dup.joined(separator: ", ")) debt by hand. If it's this loan, remove that one after adding so it isn't counted twice.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        HStack {
+                            Button("Add") { store.acceptNewLoan(p) }
+                                .buttonStyle(.borderedProminent)
+                            Button("Not mine") { store.dismissNewLoan(p) }
+                                .buttonStyle(.bordered)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+
+    private func newLoanCaption(_ p: Lending.Position) -> String {
+        func side(_ legs: [Lending.Leg], _ word: String) -> String? {
+            guard !legs.isEmpty else { return nil }
+            return legs.map { $0.amount.formatted(.number.precision(.significantDigits(1...6))) + " " + $0.symbol }
+                .joined(separator: ", ") + " " + word
+        }
+        return [side(p.debt, "borrowed"), side(p.collateral, "collateral")].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func holdingsCard(_ s: PortfolioSnapshot) -> some View {
