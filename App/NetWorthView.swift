@@ -312,7 +312,9 @@ struct NetWorthView: View {
             + s.uncoveredDisposals.count + s.unpricedAcquisitions.count
             + s.assetsMissingPrice.count
         return NavigationLink {
-            ReviewQueueView(snapshot: s)
+            ReviewQueueView(snapshot: s) { id, price in
+                store.setUnitPrice(entryID: id, unitPriceUSD: price)
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "questionmark.circle.fill")
@@ -669,6 +671,9 @@ struct Card<Content: View>: View {
 
 private struct ReviewQueueView: View {
     let snapshot: PortfolioSnapshot
+    /// Saves a purchase price onto an existing entry; false if it couldn't.
+    let onSetPrice: (String, Decimal) -> Bool
+    @State private var pricing: LedgerEntry?
 
     var body: some View {
         List {
@@ -692,12 +697,23 @@ private struct ReviewQueueView: View {
             if !snapshot.unpricedAcquisitions.isEmpty {
                 Section {
                     ForEach(snapshot.unpricedAcquisitions) { entry in
-                        reviewRow(entry.assetID, entry.timestamp, detail: entry.accountID)
+                        Button { pricing = entry } label: {
+                            HStack {
+                                reviewRow(entry.assetID, entry.timestamp, detail: entry.accountID)
+                                Spacer()
+                                Text("Add price").font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.amber)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("Missing purchase price")
                 } footer: {
-                    Text("These were added without a price, so they have no cost basis and are left out of realized gains. To fix one, go back and use + → Add transaction on the portfolio screen to record the matching buy with its price.")
+                    Text("These were added without a price, so they have no cost basis and are left out of realized gains. Tap one to enter what you paid; it stays put when balances refresh.")
                 }
             }
 
@@ -709,7 +725,7 @@ private struct ReviewQueueView: View {
                 } header: {
                     Text("Sold more than we have on record")
                 } footer: {
-                    Text("We have no earlier purchase to draw a cost basis from for these sales, so they are left out of realized gains. To fix one, go back and use + → Add transaction on the portfolio screen to record the buy that came before it.")
+                    Text("We have no earlier purchase to draw a cost basis from for these sales, so they are left out of realized gains. To fix one, tap + on the portfolio screen, choose Add transaction, and record the buy that came before it (with its price).")
                 }
             }
 
@@ -734,11 +750,16 @@ private struct ReviewQueueView: View {
                 } header: {
                     Text("No matching account")
                 } footer: {
-                    Text("These moved in or out without a matching entry on the other side, so Argus can't tell a transfer from a trade. To fix one, go back and use + → Add transaction on the portfolio screen to record the other side as a buy or a sell.")
+                    Text("These moved in or out without a matching entry on the other side, so Argus can't tell a transfer from a trade. To fix one, tap + on the portfolio screen, choose Add transaction, and record the other side as a buy or a sell.")
                 }
             }
         }
         .navigationTitle("Review")
+        .sheet(item: $pricing) { entry in
+            SetPurchasePriceView(entry: entry) { price in
+                onSetPrice(entry.id, price)
+            }
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -753,6 +774,86 @@ private struct ReviewQueueView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+// MARK: - Add a purchase price to an existing entry
+
+private struct SetPurchasePriceView: View {
+    let entry: LedgerEntry
+    let onSave: (Decimal) -> Bool
+    @Environment(\.dismiss) private var dismiss
+
+    enum Mode: String, CaseIterable, Identifiable {
+        case perUnit = "Price per unit", total = "Total cost"
+        var id: String { rawValue }
+    }
+    @State private var mode: Mode = .perUnit
+    @State private var text = ""
+    @State private var failed = false
+
+    private var quantity: Decimal { abs(entry.qtyDelta) }
+
+    /// USD per unit, derived from whichever field the user filled.
+    private var unitPrice: Decimal? {
+        guard let v = UserNumber.decimal(text), v > 0 else { return nil }
+        switch mode {
+        case .perUnit: return v
+        case .total: return quantity > 0 ? v / quantity : nil
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Asset", value: entry.assetID)
+                    LabeledContent("Account", value: entry.accountID)
+                    LabeledContent("Quantity",
+                                   value: quantity.formatted(.number.precision(.fractionLength(0...6))))
+                    LabeledContent("Date") {
+                        Text(entry.timestamp, format: .dateTime.year().month().day())
+                    }
+                }
+                Section {
+                    Picker("Enter", selection: $mode) {
+                        ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    TextField(mode == .perUnit ? "USD per \(entry.assetID)" : "Total USD paid",
+                              text: $text)
+                        #if os(iOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                    if mode == .total, let unitPrice {
+                        LabeledContent("Per unit") {
+                            Text(unitPrice, format: .currency(code: "USD"))
+                        }
+                    }
+                } footer: {
+                    Text(failed
+                         ? "Couldn't save this one. It may come from a source Argus can't edit."
+                         : "This becomes the cost basis for this lot. Later refreshes adjust the quantity but keep the total you paid.")
+                }
+            }
+            .navigationTitle("Purchase price")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard let unitPrice else { return }
+                        if onSave(unitPrice) { dismiss() } else { failed = true }
+                    }
+                    .disabled(unitPrice == nil)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

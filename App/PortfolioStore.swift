@@ -154,6 +154,23 @@ final class PortfolioStore {
         rebuildHistoryAfterLedgerChange()
     }
 
+    /// Give an existing acquisition a purchase price (from the Review queue).
+    /// Only the price changes; id, account, quantity and provenance stay, so
+    /// refresh reconcile still matches it and carries the basis forward.
+    /// Returns false if the entry isn't a user/imported ledger entry.
+    @discardableResult
+    func setUnitPrice(entryID: String, unitPriceUSD: Decimal) -> Bool {
+        guard unitPriceUSD > 0,
+              let updated = manualEntries.settingUnitPrice(unitPriceUSD, forEntry: entryID)
+        else { return false }
+        manualEntries = updated
+        recompute()
+        state = .loaded
+        LedgerStore.save(manualEntries)
+        rebuildHistoryAfterLedgerChange()
+        return true
+    }
+
     /// Bulk-append transactions (e.g. a CSV import) and re-derive once.
     /// Add a loan the launch refresh found.
     func acceptNewLoan(_ p: Lending.Position) {
