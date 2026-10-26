@@ -29,7 +29,7 @@ check("next lock", "\(EthABI.uint(w[6]))", "17")
 let shares = EthABI.tokens(EthABI.uint("0000000000000000000000000000000000000000000001f748aeae1268fa8c5d"))
 let poolTokens = EthABI.uint("000000000000000000000000000000000000000000053850b7ca9300000dcad9")
 let poolShares = EthABI.uint("00000000000000000000000000000000000000000002b08721545525d90731e7")
-let grt = EthABI.tokens(EthABI.proRata(shares, poolTokens, poolShares))
+let grt = EthABI.proRata(shares, poolTokens, poolShares)
 check("grt ~18018.57", "\(NSDecimalNumber(decimal: grt).doubleValue.rounded())", "18019.0")
 check("empty pool", "\(EthABI.proRata(1, 1, 0))", "0")
 

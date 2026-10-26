@@ -222,7 +222,7 @@ enum GraphDelegation {
         // (tokens, shares, tokensThawing, sharesThawing, thawingNonce)
         let pool = try await ArbitrumRPC.call(horizonStaking, getDelegationPool + sp + v).map(EthABI.uint)
         guard pool.count >= 5 else { return nil }
-        let active = EthABI.tokens(EthABI.proRata(EthABI.tokens(shares), pool[0], pool[1]))
+        let active = EthABI.proRata(EthABI.tokens(shares), pool[0], pool[1])
 
         // Undelegated GRT thaws before it can be withdrawn. Each request holds
         // thawing shares; one from an older nonce was invalidated by a slash.
@@ -236,7 +236,7 @@ enum GraphDelegation {
             let r = try await ArbitrumRPC.call(horizonStaking, getThawRequest + EthABI.pad(uint: thawTypeDelegation) + cursor)
             guard r.count >= 4 else { break }
             if EthABI.uint(r[3]) == pool[4] {
-                thawing += EthABI.tokens(EthABI.proRata(EthABI.tokens(EthABI.uint(r[0])), pool[2], pool[3]))
+                thawing += EthABI.proRata(EthABI.tokens(EthABI.uint(r[0])), pool[2], pool[3])
             }
             cursor = r[2]; steps += 1
         }
