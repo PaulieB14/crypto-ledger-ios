@@ -248,7 +248,8 @@ struct NetWorthView: View {
                                               alerts: alerts,
                                               store: store)
                         } label: {
-                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
+                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID),
+                                       stakedWith: StakedDelegates.delegates(symbol: p.assetID, accounts: store.heldAccounts(assetID: p.assetID)))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -595,6 +596,8 @@ private struct HeroCard: View {
 private struct HoldingRow: View {
     let position: Position
     var imageURL: URL?
+    /// Orchestrators / indexers this asset is delegated to (one per account).
+    var stakedWith: [StakedDelegate] = []
 
     var body: some View {
         HStack(spacing: 12) {
@@ -615,9 +618,25 @@ private struct HoldingRow: View {
                         .font(.caption2)
                         .foregroundStyle(hf < 1.1 ? Theme.loss : .secondary)
                 }
-                if !position.byAccount.isEmpty {
-                    Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
-                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                // Combined on the front: one row per asset, one short line per
+                // fact. The per-delegate / per-account breakdown is on the
+                // detail screen this row opens.
+                if stakedWith.isEmpty {
+                    if !position.byAccount.isEmpty {
+                        Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    }
+                } else {
+                    if let line = StakedDelegates.summary(stakedWith.map { (kind: $0.kind, name: $0.displayName) }) {
+                        Text(line)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    let split = StakedDelegates.split(position.byAccount.map { (account: $0.accountID, qty: $0.qty) },
+                                                      stakedAccounts: Set(stakedWith.map(\.account)))
+                    if split.liquid > 0 {
+                        Text("Staked " + Self.compact(split.staked) + " · Liquid " + Self.compact(split.liquid))
+                            .font(.caption2).monospacedDigit().foregroundStyle(.tertiary).lineLimit(1)
+                    }
                 }
             }
             Spacer()
@@ -638,6 +657,9 @@ private struct HoldingRow: View {
                 .font(.caption2).foregroundStyle(.tertiary).padding(.leading, 1)
         }
         .padding(.vertical, 8)
+    }
+    static func compact(_ q: Decimal) -> String {
+        q.formatted(.number.notation(.compactName).precision(.significantDigits(1...4)))
     }
 }
 

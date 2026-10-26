@@ -268,6 +268,39 @@ enum Staking {
         async let grt = GraphDelegation.positions(address: address)
         let all = [await sw, await lp, await grt]
         guard all.contains(where: { $0 != nil }) else { return nil }
-        return all.compactMap { $0 }.flatMap { $0 }.sorted { $0.amount > $1.amount }
+        let out = all.compactMap { $0 }.flatMap { $0 }.sorted { $0.amount > $1.amount }
+        // Remember which full address each staked account points at, and look
+        // up names in the background. Display only — never awaited here, so a
+        // slow or dead name service cannot hold up or fail the staking read.
+        let wallet = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let delegates = out.compactMap { $0.delegate(wallet: wallet) }
+        StakedDelegates.record(delegates)
+        if !delegates.isEmpty {
+            Task.detached(priority: .utility) {
+                await DelegateNames.resolve(delegates.map { (kind: $0.kind, address: $0.address) })
+            }
+        }
+        return out
+    }
+}
+
+extension StakingPosition {
+    /// Livepeer orchestrator / Graph indexer behind this position; nil for
+    /// StakeWise (its vault name is already human-readable).
+    var delegateKind: DelegateNames.Kind? {
+        switch protocolName {
+        case "Livepeer": return .livepeer
+        case "The Graph": return .graph
+        default: return nil
+        }
+    }
+
+    /// The ledger account label. Unchanged format — it is the reconcile key.
+    var accountLabel: String { "\(protocolName) \(vaultName)" }
+
+    func delegate(wallet: String) -> StakedDelegate? {
+        guard let kind = delegateKind else { return nil }
+        return StakedDelegate(account: accountLabel, protocolName: protocolName, symbol: symbol.uppercased(),
+                              kind: kind, address: vaultAddress.lowercased(), wallets: [wallet])
     }
 }

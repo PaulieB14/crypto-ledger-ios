@@ -29,6 +29,8 @@ struct WalletImportView: View {
     @State private var skippedUnpriced = 0
     /// Staked positions, which a token-balance scan cannot see at all.
     @State private var staking: [StakingPosition] = []
+    /// Bumped when delegate names arrive, so rows re-read the name cache.
+    @State private var namesVersion = 0
     /// Collateral and debt. Receipt tokens for these are removed from `priced`.
     @State private var loans: [Lending.Position] = []
 
@@ -202,7 +204,7 @@ struct WalletImportView: View {
             HStack {
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isOn ? Theme.amber : Color.secondary)
-                Text("\(p.vaultName)").fontWeight(.semibold)
+                Text(stakeTitle(p)).fontWeight(.semibold)
                 Spacer()
                 Text(p.amount.formatted(.number.precision(.significantDigits(1...6))) + " " + p.symbol)
                     .monospacedDigit()
@@ -224,9 +226,24 @@ struct WalletImportView: View {
                 }
             }
             .font(.caption).foregroundStyle(.secondary)
+            if p.delegateKind != nil {
+                Text(p.vaultAddress.lowercased())
+                    .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
         }
         }
         .buttonStyle(.plain)
+    }
+
+    /// "Staked with embody-net.eth" for Livepeer/Graph (falls back to the short
+    /// address); StakeWise keeps its vault name. Display only — the account
+    /// label imported below stays address-based.
+    private func stakeTitle(_ p: StakingPosition) -> String {
+        _ = namesVersion
+        guard let kind = p.delegateKind else { return p.vaultName }
+        let role = kind == .livepeer ? "Orchestrator" : "Indexer"
+        return "\(role) " + DelegateNames.display(p.vaultAddress)
     }
 
     private func loanRow(_ p: Lending.Position) -> some View {
@@ -353,6 +370,13 @@ struct WalletImportView: View {
             async let lendingTask = Lending.positions(address: addr, chains: selectedChains)
             let scan = await WalletImporter.fetch(address: addr, chains: selectedChains)
             staking = (await stakingTask) ?? []
+            let named = staking.compactMap { p in p.delegateKind.map { (kind: $0, address: p.vaultAddress) } }
+            if !named.isEmpty {
+                Task {
+                    await DelegateNames.resolve(named)
+                    namesVersion += 1
+                }
+            }
             loans = (await lendingTask) ?? []
             // Receipt and debt tokens are the loan, not extra holdings.
             let blocked = Set(loans.flatMap(\.representedTokens).map { $0.lowercased() })
@@ -483,7 +507,7 @@ struct WalletImportView: View {
                 // tokens are not in the wallet's balance at all. `exiting` is deliberately included: assets in the exit
                 // queue are still owned, just no longer earning.
                 d.asset = p.symbol
-                d.account = "\(p.protocolName) \(p.vaultName)"
+                d.account = p.accountLabel
                 d.quantityText = UserNumber.text(p.amount)
                 if let price = catalog.price(for: p.symbol) { d.priceText = UserNumber.text(price) }
                 return d

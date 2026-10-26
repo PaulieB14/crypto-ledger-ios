@@ -383,6 +383,14 @@ final class PortfolioStore {
     /// Replace the on-device ledger with a file this app previously exported.
     /// Recorded net-worth snapshots are cleared: they described the old ledger,
     /// and a restore that left them in place would draw someone else's chart.
+    /// Accounts that currently hold a positive quantity of `assetID` in the
+    /// ledger — used to show only delegates that are still held.
+    func heldAccounts(assetID: String) -> Set<String> {
+        var qty: [String: Decimal] = [:]
+        for e in manualEntries where e.assetID == assetID.uppercased() { qty[e.accountID, default: 0] += e.qtyDelta }
+        return Set(qty.filter { $0.value > 0 }.keys)
+    }
+
     func restoreLedger(_ entries: [LedgerEntry]) {
         manualEntries = entries
         sourceEntries = []

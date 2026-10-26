@@ -40,5 +40,43 @@ check("pad uint", EthABI.pad(uint: 17), String(repeating: "0", count: 62) + "11"
 check("zero", "\(EthABI.isZero(String(repeating: "0", count: 64)))", "true")
 check("bad length", "\(EthABI.words("0x1234").count)", "0")
 
+// Delegate names — real responses captured 2026-10-26 with curl.
+let lpExplorer = #"{"id":"0xa03113bab8d4ebe5695591f60011741233e8b82f","idShort":"0xa031…b82f","name":"embody-net.eth","description":"The Embody Network node","url":null,"twitter":null,"github":null,"avatar":"/api/ens-data/image/embody-net.eth"}"#
+check("livepeer ens-data name", DelegateNames.parseName(Data(lpExplorer.utf8)) ?? "nil", "embody-net.eth")
+let lpNone = #"{"id":"0x0000000000000000000000000000000000000001","idShort":"0x…00000001","name":null}"#
+check("livepeer no name", DelegateNames.parseName(Data(lpNone.utf8)) ?? "nil", "nil")
+let ensIdeas = #"{"address":"0xa03113baB8D4EbE5695591f60011741233E8b82F","name":"embody-net.eth","displayName":"embody-net.eth","avatar":"https://metadata.ens.domains/mainnet/avatar/embody-net.eth"}"#
+check("ensideas name", DelegateNames.parseName(Data(ensIdeas.utf8)) ?? "nil", "embody-net.eth")
+let ensNone = #"{"address":"0x0000000000000000000000000000000000000001","name":null,"displayName":"0x000…0001","avatar":null}"#
+check("ensideas no name", DelegateNames.parseName(Data(ensNone.utf8)) ?? "nil", "nil")
+check("garbage", DelegateNames.parseName(Data("<html>".utf8)) ?? "nil", "nil")
+check("short", DelegateNames.short("0xa03113bab8d4ebe5695591f60011741233e8b82f"), "0xa031…b82f")
+check("lp link", DelegateNames.explorerURL(kind: .livepeer, address: "0xA03113bab8d4ebe5695591f60011741233e8b82F")?.absoluteString ?? "nil",
+      "https://explorer.livepeer.org/accounts/0xa03113bab8d4ebe5695591f60011741233e8b82f/orchestrating")
+check("graph link", DelegateNames.explorerURL(kind: .graph, address: "0xabc")?.absoluteString ?? "nil",
+      "https://thegraph.com/explorer/profile/0xabc?view=Indexing")
+
+// Registry merge: same account from two wallets lists both; different
+// indexers stay separate rows.
+let d1 = StakedDelegate(account: "The Graph Indexer 0xaaaa…0001", protocolName: "The Graph", symbol: "GRT",
+                        kind: .graph, address: "0xaaaa0001", wallets: ["0xw1"])
+let d2 = StakedDelegate(account: "The Graph Indexer 0xbbbb…0002", protocolName: "The Graph", symbol: "GRT",
+                        kind: .graph, address: "0xbbbb0002", wallets: ["0xw1"])
+var d1b = d1; d1b.wallets = ["0xw2"]
+let merged = StakedDelegates.merge([d1], [d2, d1b])
+check("merge count", "\(merged.count)", "2")
+check("merge wallets", merged.first { $0.address == "0xaaaa0001" }?.wallets.joined(separator: ",") ?? "nil", "0xw1,0xw2")
+
+// Front-row summary: one delegate -> name, several -> count.
+check("summary one", StakedDelegates.summary([(kind: .livepeer, name: "embody-net.eth")]) ?? "nil", "Staked with embody-net.eth")
+check("summary graph", StakedDelegates.summary([(kind: .graph, name: "a"), (kind: .graph, name: "b")]) ?? "nil", "Staked with 2 indexers")
+check("summary mixed", StakedDelegates.summary([(kind: .graph, name: "a"), (kind: .livepeer, name: "b")]) ?? "nil", "Staked with 2 delegates")
+check("summary none", StakedDelegates.summary([]) ?? "nil", "nil")
+let sp = StakedDelegates.split([(account: "The Graph Indexer A", qty: Decimal(107730)), (account: "The Graph Indexer B", qty: Decimal(47773)),
+                                (account: "Wallet 0xaa02…98dc", qty: Decimal(86908))],
+                               stakedAccounts: ["The Graph Indexer A", "The Graph Indexer B"])
+check("split staked", "\(sp.staked)", "155503")
+check("split liquid", "\(sp.liquid)", "86908")
+
 if failures > 0 { print("\(failures) failure(s)"); exit(1) }
 print("StakingABI: all checks passed")
