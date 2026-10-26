@@ -204,3 +204,31 @@ extension LedgerEntry {
         return value
     }
 }
+
+// MARK: - Pricing an existing entry
+
+extension LedgerEntry {
+    /// A copy of this entry with a new USD unit price. Everything else —
+    /// id, provenance, timestamp, account, asset, quantity, kind and links —
+    /// is preserved, so re-import dedupe and refresh reconciliation still
+    /// recognise it as the same fact.
+    public func withUnitPrice(_ price: Decimal?) -> LedgerEntry {
+        LedgerEntry(
+            id: id, sourceID: sourceID, externalRef: externalRef,
+            timestamp: timestamp, accountID: accountID, assetID: assetID,
+            qtyDelta: qtyDelta, kind: kind, unitPriceUSD: price,
+            groupID: groupID, transferGroupID: transferGroupID,
+            healthFactor: healthFactor)
+    }
+}
+
+extension Array where Element == LedgerEntry {
+    /// Replaces the unit price of the entry with `id`. Returns nil when no
+    /// entry has that id, so callers can tell a no-op from a save.
+    public func settingUnitPrice(_ price: Decimal, forEntry id: String) -> [LedgerEntry]? {
+        guard let i = firstIndex(where: { $0.id == id }) else { return nil }
+        var out = self
+        out[i] = self[i].withUnitPrice(price)
+        return out
+    }
+}
