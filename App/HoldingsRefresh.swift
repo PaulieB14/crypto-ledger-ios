@@ -84,7 +84,7 @@ enum HoldingsRefresh {
         for address in addresses {
             // nil means unreachable. Treating that as "you hold nothing" would
             // zero out real positions on a flaky connection, so it is skipped.
-            guard let positions = await StakeWise.positions(address: address) else { continue }
+            guard let positions = await Staking.positions(address: address) else { continue }
             for p in positions { live["\(p.protocolName) \(p.vaultName)"] = p }
         }
         guard !live.isEmpty else { return Result(entries: entries) }
@@ -120,7 +120,7 @@ enum HoldingsRefresh {
             out.append(LedgerEntry(
                 id: template.id,
                 sourceID: template.sourceID,
-                externalRef: "stakewise-\(position.chain)-\(position.vaultAddress)",
+                externalRef: "\(position.protocolName.lowercased().replacingOccurrences(of: " ", with: "-"))-\(position.chain)-\(position.vaultAddress)",
                 timestamp: template.timestamp,
                 accountID: account,
                 assetID: position.symbol.uppercased(),

@@ -209,8 +209,10 @@ struct WalletImportView: View {
             }
             HStack(spacing: 8) {
                 Text(p.protocolName)
-                Text("·")
-                Text(String(format: "%.2f%% APY", p.apy))
+                if p.apy > 0 {
+                    Text("·")
+                    Text(String(format: "%.2f%% APY", p.apy))
+                }
                 if p.earned > 0 {
                     Text("·")
                     Text("earned " + p.earned.formatted(.number.precision(.significantDigits(1...4))))
@@ -347,7 +349,7 @@ struct WalletImportView: View {
             await catalog.load()   // ensure prices are available for filtering
             // Staked assets live in the protocol's contract, not the wallet, so
             // the balance scan above is blind to them. Fetch both concurrently.
-            async let stakingTask = StakeWise.positions(address: addr)
+            async let stakingTask = Staking.positions(address: addr)
             async let lendingTask = Lending.positions(address: addr, chains: selectedChains)
             let scan = await WalletImporter.fetch(address: addr, chains: selectedChains)
             staking = (await stakingTask) ?? []
@@ -475,7 +477,10 @@ struct WalletImportView: View {
                 d.kind = .balance
                 // A StakeWise vault deposit is exposure to the vault's underlying
                 // asset (ETH on mainnet, GNO on Gnosis), so it imports as that
-                // asset. `exiting` is deliberately included: assets in the exit
+                // asset. Livepeer and Graph delegations likewise import as LPT
+                // and GRT under their own account, so they never merge with (or
+                // double-count) liquid LPT/GRT from the wallet scan — the staked
+                // tokens are not in the wallet's balance at all. `exiting` is deliberately included: assets in the exit
                 // queue are still owned, just no longer earning.
                 d.asset = p.symbol
                 d.account = "\(p.protocolName) \(p.vaultName)"

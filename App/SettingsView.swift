@@ -64,6 +64,8 @@ struct SettingsView: View {
                     Text("System follows your device setting.")
                 }
 
+                AppLockSettingsSection()
+
                 Section {
                     Link(destination: URL(string: "https://paulieb14.github.io/crypto-ledger-ios/privacy.html")!) {
                         Label("Privacy policy", systemImage: "hand.raised")

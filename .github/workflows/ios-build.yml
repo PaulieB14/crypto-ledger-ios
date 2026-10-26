@@ -37,6 +37,9 @@ jobs:
         # run under full Xcode would not be run.
         run: cd Tests/LocaleNumbers && swift run
 
+      - name: Staking ABI decoding
+        run: cd Tests/StakingABI && swift run
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
