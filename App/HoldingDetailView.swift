@@ -44,6 +44,7 @@ struct HoldingDetailView: View {
                 header
                 priceCard
                 positionCard
+                if !delegates.isEmpty { stakedWithCard }
                 alertsCard
                 newsCard
             }
@@ -171,6 +172,58 @@ struct HoldingDetailView: View {
         loadingHistory = true
         defer { loadingHistory = false }
         history = await CoinGecko.priceHistory(coinID: id, days: range.rawValue)
+    }
+
+    // MARK: - Staked with
+
+    /// Orchestrators / indexers behind this holding, one row each, read from
+    /// the registry Staking.positions writes. Bumped when names arrive.
+    @State private var namesVersion = 0
+
+    private var delegates: [StakedDelegate] {
+        _ = namesVersion
+        return StakedDelegates.delegates(symbol: position.assetID,
+                                         accounts: store.heldAccounts(assetID: position.assetID))
+    }
+
+    private var stakedWithCard: some View {
+        let list = delegates
+        let multiWallet = Set(list.flatMap(\.wallets)).count > 1
+        return Card(title: "Staked with", systemImage: "person.2") {
+            ForEach(list) { d in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(d.displayName).fontWeight(.semibold)
+                        Spacer()
+                        if let q = position.byAccount.first(where: { $0.accountID == d.account })?.qty {
+                            Text(q.formatted(.number.precision(.significantDigits(1...8))) + " " + position.assetID)
+                                .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(d.kind == .livepeer ? "Livepeer orchestrator" : d.kind == .graph ? "Graph indexer" : d.protocolName)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(d.address)
+                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    if multiWallet {
+                        Text("From " + d.wallets.map(DelegateNames.short).joined(separator: ", "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let url = d.explorerURL {
+                        Link(d.kind == .livepeer ? "View on Livepeer Explorer" : "View on Graph Explorer", destination: url)
+                            .font(.caption)
+                    }
+                }
+                .padding(.vertical, 4)
+                if d.id != list.last?.id { Divider() }
+            }
+        }
+        .task {
+            let missing = list.filter { !$0.hasName }
+            guard !missing.isEmpty else { return }
+            await DelegateNames.resolve(missing.map { (kind: $0.kind, address: $0.address) })
+            namesVersion += 1
+        }
     }
 
     private var positionCard: some View {

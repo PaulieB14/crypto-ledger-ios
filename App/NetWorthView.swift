@@ -248,7 +248,8 @@ struct NetWorthView: View {
                                               alerts: alerts,
                                               store: store)
                         } label: {
-                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID))
+                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID),
+                                       stakedWith: StakedDelegates.delegates(symbol: p.assetID, accounts: store.heldAccounts(assetID: p.assetID)))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -595,6 +596,8 @@ private struct HeroCard: View {
 private struct HoldingRow: View {
     let position: Position
     var imageURL: URL?
+    /// Orchestrators / indexers this asset is delegated to (one per account).
+    var stakedWith: [StakedDelegate] = []
 
     var body: some View {
         HStack(spacing: 12) {
@@ -618,6 +621,10 @@ private struct HoldingRow: View {
                 if !position.byAccount.isEmpty {
                     Text(position.byAccount.map(\.shortLabel).joined(separator: " · "))
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+                if !stakedWith.isEmpty {
+                    Text("Staked with " + stakedWith.map(\.displayName).joined(separator: ", "))
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             Spacer()
