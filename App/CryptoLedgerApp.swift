@@ -13,7 +13,9 @@ struct CryptoLedgerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NetWorthView()
+            AppLockGate {
+                NetWorthView()
+            }
         }
     }
 }
