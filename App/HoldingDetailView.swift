@@ -196,8 +196,14 @@ struct HoldingDetailView: View {
                         Text(d.displayName).fontWeight(.semibold)
                         Spacer()
                         if let q = position.byAccount.first(where: { $0.accountID == d.account })?.qty {
-                            Text(q.formatted(.number.precision(.significantDigits(1...8))) + " " + position.assetID)
-                                .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(q.formatted(.number.precision(.significantDigits(1...8))) + " " + position.assetID)
+                                    .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                                if let spot = position.spotUSD {
+                                    Text((q * spot).formatted(.currency(code: "USD")))
+                                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                     Text(d.kind == .livepeer ? "Livepeer orchestrator" : d.kind == .graph ? "Graph indexer" : d.protocolName)
@@ -229,6 +235,13 @@ struct HoldingDetailView: View {
     private var positionCard: some View {
         Card(title: "Your position", systemImage: "chart.pie") {
             statRow("Holdings", "\(position.qty.formatted(.number.precision(.significantDigits(1...8)))) \(position.assetID)")
+            if !delegates.isEmpty {
+                let split = StakedDelegates.split(position.byAccount.map { (account: $0.accountID, qty: $0.qty) },
+                                                  stakedAccounts: Set(delegates.map(\.account)))
+                statRow("Staked", "\(split.staked.formatted(.number.precision(.significantDigits(1...8)))) \(position.assetID)")
+                statRow("Liquid", "\(split.liquid.formatted(.number.precision(.significantDigits(1...8)))) \(position.assetID)")
+                Divider()
+            }
             // The row above is the pooled total. Staked and wallet balances are
             // the same asset to the tax engine but not to the person holding
             // them, so break the total back down by where it actually sits.

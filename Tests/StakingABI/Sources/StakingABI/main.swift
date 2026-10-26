@@ -67,5 +67,16 @@ let merged = StakedDelegates.merge([d1], [d2, d1b])
 check("merge count", "\(merged.count)", "2")
 check("merge wallets", merged.first { $0.address == "0xaaaa0001" }?.wallets.joined(separator: ",") ?? "nil", "0xw1,0xw2")
 
+// Front-row summary: one delegate -> name, several -> count.
+check("summary one", StakedDelegates.summary([(kind: .livepeer, name: "embody-net.eth")]) ?? "nil", "Staked with embody-net.eth")
+check("summary graph", StakedDelegates.summary([(kind: .graph, name: "a"), (kind: .graph, name: "b")]) ?? "nil", "Staked with 2 indexers")
+check("summary mixed", StakedDelegates.summary([(kind: .graph, name: "a"), (kind: .livepeer, name: "b")]) ?? "nil", "Staked with 2 delegates")
+check("summary none", StakedDelegates.summary([]) ?? "nil", "nil")
+let sp = StakedDelegates.split([(account: "The Graph Indexer A", qty: Decimal(107730)), (account: "The Graph Indexer B", qty: Decimal(47773)),
+                                (account: "Wallet 0xaa02…98dc", qty: Decimal(86908))],
+                               stakedAccounts: ["The Graph Indexer A", "The Graph Indexer B"])
+check("split staked", "\(sp.staked)", "155503")
+check("split liquid", "\(sp.liquid)", "86908")
+
 if failures > 0 { print("\(failures) failure(s)"); exit(1) }
 print("StakingABI: all checks passed")

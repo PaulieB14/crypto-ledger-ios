@@ -176,6 +176,32 @@ enum StakedDelegates {
         }
     }
 
+    /// One concise line for the holdings list: a single delegate shows its
+    /// name ("Staked with embody-net.eth"); several collapse to a count
+    /// ("Staked with 2 indexers") — the per-delegate breakdown lives on the
+    /// detail screen. Pure, so it is unit-tested.
+    static func summary(_ list: [(kind: DelegateNames.Kind, name: String)]) -> String? {
+        guard !list.isEmpty else { return nil }
+        if list.count == 1 { return "Staked with " + list[0].name }
+        let kinds = Set(list.map(\.kind))
+        let noun: String
+        if kinds == [.graph] { noun = "indexers" }
+        else if kinds == [.livepeer] { noun = "orchestrators" }
+        else { noun = "delegates" }
+        return "Staked with \(list.count) \(noun)"
+    }
+
+    /// Split an asset's per-account quantities into staked (accounts in
+    /// `stakedAccounts`) and liquid (everything else). Display only: the two
+    /// always add back up to the same total. Pure, so it is unit-tested.
+    static func split(_ parts: [(account: String, qty: Decimal)], stakedAccounts: Set<String>) -> (staked: Decimal, liquid: Decimal) {
+        var staked = Decimal(0), liquid = Decimal(0)
+        for p in parts {
+            if stakedAccounts.contains(p.account) { staked += p.qty } else { liquid += p.qty }
+        }
+        return (staked, liquid)
+    }
+
     /// Delegates for one asset, limited to accounts the ledger still holds.
     static func delegates(symbol: String, accounts: Set<String>) -> [StakedDelegate] {
         all.filter { $0.symbol.uppercased() == symbol.uppercased() && accounts.contains($0.account) }
