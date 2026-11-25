@@ -107,7 +107,7 @@ Six frames. Same layout on every frame so the set reads as one brand, not six ad
 - Status bar: 9:41, full battery, no personal notifications.
 - Data: demo amounts you type in by hand (for example 0.50 BTC, 2 ETH, and a few coins under $1). Not a real wallet, not a customer's holdings, and not the old sample-portfolio mode. The app does not ship with fake data. The screenshots are staged.
 
-Capture them from the iOS Simulator or a TestFlight build of the next version, with Appearance set to Dark.
+`.github/workflows/app-store-screenshots.yml` captures these on a Mac runner from a Debug simulator build launched with `-ArgusDemoScreenshots`. That workflow does not upload to TestFlight. Appearance is forced to Dark for those launches only.
 
 1. Headline on the image: `No account. On your phone.`
    Screen: portfolio. Net worth, the chart, and the Market Cycle card under it.

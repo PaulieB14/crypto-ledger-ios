@@ -4,6 +4,7 @@ import Foundation
 // caller keeps every value in the total and only drops rows from the list.
 var failures = 0
 
+@MainActor
 func check(_ condition: Bool, _ message: String) {
     if !condition {
         failures += 1

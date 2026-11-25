@@ -125,12 +125,7 @@ enum USDFormat {
         locale: Locale = .current
     ) -> String {
         if abs(value) >= cutoff {
-            return value.formatted(
-                .currency(code: "USD")
-                    .notation(.compactName)
-                    .precision(.fractionLength(0...1))
-                    .locale(locale)
-            )
+            return compact(value, locale: locale)
         }
         return exact(value, fractionDigits: fractionDigits, locale: locale)
     }
@@ -141,14 +136,31 @@ enum USDFormat {
         fractionDigits: ClosedRange<Int> = 2...2,
         locale: Locale = .current
     ) -> String {
-        if abs(value) >= cutoff {
-            return value.formatted(
-                .currency(code: "USD")
-                    .notation(.compactName)
-                    .precision(.fractionLength(0...1))
-                    .locale(locale)
-            )
+        display(Decimal(value), compactAbove: Decimal(cutoff), fractionDigits: fractionDigits, locale: locale)
+    }
+
+    /// `$12.4K` / `$1.2M`. NumberFormatter, not `FormatStyle.notation`, which
+    /// is macOS 15 / iOS 18 and this app still deploys to iOS 17.
+    private static func compact(_ value: Decimal, locale: Locale) -> String {
+        let number = (value as NSDecimalNumber).doubleValue
+        let magnitude = abs(number)
+        let (scaled, suffix): (Double, String)
+        if magnitude >= 1_000_000_000 {
+            (scaled, suffix) = (number / 1_000_000_000, "B")
+        } else if magnitude >= 1_000_000 {
+            (scaled, suffix) = (number / 1_000_000, "M")
+        } else {
+            (scaled, suffix) = (number / 1_000, "K")
         }
-        return value.formatted(.currency(code: "USD").precision(.fractionLength(fractionDigits)).locale(locale))
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        let tenths = (abs(scaled) * 10).rounded() / 10
+        let whole = tenths.truncatingRemainder(dividingBy: 1) == 0
+        formatter.minimumFractionDigits = whole ? 0 : 1
+        formatter.maximumFractionDigits = whole ? 0 : 1
+        let body = formatter.string(from: NSNumber(value: scaled)) ?? "\(scaled)"
+        return body + suffix
     }
 }

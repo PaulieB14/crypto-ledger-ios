@@ -7,5 +7,6 @@ import PackageDescription
 // Sources/ReviewPrompt/ReviewPrompt.swift is a symlink to App/ReviewPrompt.swift.
 let package = Package(
     name: "ReviewPrompt",
+    platforms: [.macOS(.v13)],
     targets: [.executableTarget(name: "ReviewPrompt", path: "Sources/ReviewPrompt")]
 )

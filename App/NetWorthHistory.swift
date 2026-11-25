@@ -27,6 +27,9 @@ enum SnapshotStore {
     }
 
     static func save(_ snaps: [NetWorthSnapshot]) {
+        #if DEBUG
+        if DemoSeed.isEnabled { return }
+        #endif
         guard let url = fileURL, let data = try? JSONEncoder().encode(snaps) else { return }
         try? data.write(to: url, options: .atomic)
     }

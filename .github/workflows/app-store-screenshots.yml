@@ -1,0 +1,39 @@
+name: App Store screenshots
+
+# Manual frames for the product page. Debug simulator only.
+# Does not archive, sign, or upload to TestFlight. MARKETING_VERSION is untouched.
+#
+# workflow_dispatch is listed so it can be re-run from the Actions tab once this
+# file is on the default branch. GitHub will not dispatch a workflow that exists
+# only on a feature branch, so a push to this branch also runs it.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/market-cycle-and-polish-8893
+
+concurrency:
+  group: app-store-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Capture demo screens and composite frames
+        run: bash Scripts/capture-app-store-screenshots.sh
+
+      - name: Upload frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: artifacts/app-store-screenshots
+          if-no-files-found: ignore

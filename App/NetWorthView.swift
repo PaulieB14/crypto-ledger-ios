@@ -30,6 +30,9 @@ struct NetWorthView: View {
     /// Set when a wallet import added holdings. Consumed once the sheet is gone,
     /// so the review dialog is not asked from under the import sheet.
     @State private var askForReviewAfterImport = false
+    #if DEBUG
+    @State private var demoPosition: Position?
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -54,6 +57,17 @@ struct NetWorthView: View {
             .navigationTitle("Portfolio")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
+            #if DEBUG
+            .navigationDestination(item: $demoPosition) { position in
+                HoldingDetailView(
+                    position: position,
+                    name: position.assetID == "BTC" ? "Bitcoin" : catalog.name(for: position.assetID),
+                    imageURL: catalog.imageURL(for: position.assetID),
+                    coinID: position.assetID == "BTC" ? "bitcoin" : catalog.coinID(for: position.assetID),
+                    alerts: alerts,
+                    store: store)
+            }
             #endif
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -136,6 +150,12 @@ struct NetWorthView: View {
             .task {
                 alerts.load()
                 await store.load()
+                #if DEBUG
+                if DemoSeed.isEnabled {
+                    await openDemoScreen()
+                    return
+                }
+                #endif
                 await catalog.load()
                 store.refreshPrices(from: catalog.spotMap)
                 alerts.evaluate(spot: catalog.spotMap)
@@ -151,6 +171,9 @@ struct NetWorthView: View {
             .onChange(of: scenePhase) { _, phase in
                 // Returning to the app is a good moment to re-price and re-check
                 // alerts against the latest quotes.
+                #if DEBUG
+                if DemoSeed.isEnabled { return }
+                #endif
                 if phase == .active {
                     Task {
                         await catalog.reload()
@@ -176,6 +199,29 @@ struct NetWorthView: View {
         .onChange(of: smallBalanceCustom) { _, _ in smallBalanceShowingAll = false }
     }
 
+    #if DEBUG
+    /// Push the one screen this launch argument asked to photograph.
+    /// Prices stay on the demo spots. A catalog refresh would move the dust
+    /// rows across the $10 line.
+    private func openDemoScreen() async {
+        switch DemoSeed.screen {
+        case "btc":
+            if let btc = store.snapshot?.positions.first(where: { $0.assetID == "BTC" && !$0.isLiability }) {
+                demoPosition = btc
+            }
+        case "import":
+            showingWallet = true
+        case "cycle":
+            #if os(iOS)
+            try? await Task.sleep(for: .milliseconds(700))
+            InAppSafari.present(MarketCycle.page)
+            #endif
+        default:
+            break
+        }
+    }
+    #endif
+
     /// After the import sheet is gone and the new holdings are on screen.
     /// At most once per marketing version. Cancel and empty imports do not ask.
     /// The system may still decline to show a dialog. We record the version
@@ -200,6 +246,7 @@ struct NetWorthView: View {
     // MARK: - Loaded
 
     private func loaded(_ s: PortfolioSnapshot) -> some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 16) {
                 // Prices that failed to load are called out here rather than
@@ -221,6 +268,7 @@ struct NetWorthView: View {
                 }
 
                 holdingsCard(s)
+                    .id("holdings")
                 realizedCard(s)
             }
             .padding(16)
@@ -228,7 +276,26 @@ struct NetWorthView: View {
             .frame(maxWidth: .infinity)
         }
         .background(backdrop)
+        #if DEBUG
+        .onAppear { scrollDemoIfNeeded(proxy) }
+        #endif
+        }
     }
+
+    #if DEBUG
+    private func scrollDemoIfNeeded(_ proxy: ScrollViewProxy) {
+        guard DemoSeed.isEnabled else { return }
+        let anchor: UnitPoint? = switch DemoSeed.screen {
+        case "dust": .top
+        case "shown": .bottom
+        default: nil
+        }
+        guard let anchor else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(DemoSeed.screen == "shown" ? "holdings-note" : "holdings", anchor: anchor)
+        }
+    }
+    #endif
 
     /// Loans found on a wallet you imported, since the last import. Asked,
     /// not added: a loan you entered by hand may be the same one.
@@ -410,6 +477,7 @@ struct NetWorthView: View {
         }
         .buttonStyle(.plain)
         .disabled(count == 0)
+        .id("holdings-note")
         .accessibilityLabel(count > 0
             ? "\(title). \(smallBalanceShowingAll ? "Hide them again" : "Show all")"
             : title)
