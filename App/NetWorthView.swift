@@ -1,12 +1,22 @@
 import SwiftUI
 import LedgerCore
+#if os(iOS)
+import StoreKit
+#endif
 
 struct NetWorthView: View {
+    #if os(iOS)
+    @Environment(\.requestReview) private var requestReview
+    #endif
     @Environment(\.scenePhase) private var scenePhase
     @State private var store = PortfolioStore.live()
     @State private var catalog = CoinCatalog()
     /// Light/dark override. `.system` is the default and stores nothing.
     @AppStorage("appearance") private var appearance: Appearance = .system
+    /// Holdings-list cutoff. Off until the person picks one. The total is not filtered.
+    @AppStorage(SmallBalancePolicy.presetKey) private var smallBalancePreset: SmallBalancePreset = .off
+    @AppStorage(SmallBalancePolicy.customKey) private var smallBalanceCustom = ""
+    @AppStorage(SmallBalancePolicy.showingAllKey) private var smallBalanceShowingAll = false
     @State private var alerts = AlertStore()
     @State private var showingBalance = false
     /// Coin tapped in the market list, pre-filled into the "add holding" sheet.
@@ -17,6 +27,9 @@ struct NetWorthView: View {
     @State private var showingImport = false
     @State private var showingHelp = false
     @State private var showingSettings = false
+    /// Set when a wallet import added holdings. Consumed once the sheet is gone,
+    /// so the review dialog is not asked from under the import sheet.
+    @State private var askForReviewAfterImport = false
 
     var body: some View {
         NavigationStack {
@@ -86,10 +99,11 @@ struct NetWorthView: View {
                     store.refreshPrices(from: catalog.spotMap)
                 }
             }
-            .sheet(isPresented: $showingWallet) {
+            .sheet(isPresented: $showingWallet, onDismiss: considerReviewAfterImport) {
                 WalletImportView(catalog: catalog, manualDebts: store.manualDebtSymbols) { drafts in
                     store.addTransactions(drafts)
                     store.refreshPrices(from: catalog.spotMap)
+                    askForReviewAfterImport = !drafts.isEmpty
                 }
             }
             .sheet(isPresented: $showingAdd) {
@@ -158,6 +172,29 @@ struct NetWorthView: View {
         // exercises it — that harness does not compile CryptoLedgerApp.swift,
         // so anything put there is checked only by CI.
         .preferredColorScheme(appearance.colorScheme)
+        .onChange(of: smallBalancePreset) { _, _ in smallBalanceShowingAll = false }
+        .onChange(of: smallBalanceCustom) { _, _ in smallBalanceShowingAll = false }
+    }
+
+    /// After the import sheet is gone and the new holdings are on screen.
+    /// At most once per marketing version. Cancel and empty imports do not ask.
+    /// The system may still decline to show a dialog. We record the version
+    /// first so a second import in this version does not ask again.
+    private func considerReviewAfterImport() {
+        let succeeded = askForReviewAfterImport
+        askForReviewAfterImport = false
+        #if os(iOS)
+        let version = ReviewPrompt.currentVersion()
+        guard ReviewPrompt.shouldAsk(
+            currentVersion: version,
+            askedVersion: ReviewPrompt.askedVersion(),
+            succeeded: succeeded
+        ) else { return }
+        ReviewPrompt.markAsked(version)
+        requestReview()
+        #else
+        _ = succeeded
+        #endif
     }
 
     // MARK: - Loaded
@@ -170,6 +207,10 @@ struct NetWorthView: View {
                 PriceStatusBanner(catalog: catalog)
 
                 HeroCard(snapshot: s, points: store.historyPoints)
+
+                // Under the total, not inside it. A reference the person opens
+                // on purpose. It does not read the portfolio.
+                MarketCycleCard()
 
                 if !store.newLoans.isEmpty {
                     newLoansCard
@@ -230,43 +271,148 @@ struct NetWorthView: View {
         return [side(p.debt, "borrowed"), side(p.collateral, "collateral")].compactMap { $0 }.joined(separator: " · ")
     }
 
+    private var smallBalancePolicy: SmallBalancePolicy {
+        SmallBalancePolicy(
+            preset: smallBalancePreset,
+            customUSD: UserNumber.decimal(smallBalanceCustom) ?? 0,
+            showingAll: smallBalanceShowingAll
+        )
+    }
+
     private func holdingsCard(_ s: PortfolioSnapshot) -> some View {
-        Card(title: "Holdings", systemImage: "circle.grid.2x2") {
-            if s.positions.isEmpty {
-                Text("No open positions yet. Tap ")
-                    + Text(Image(systemName: "plus.circle.fill")).foregroundColor(Theme.amber)
-                    + Text(" to add one.")
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(s.positions.enumerated()), id: \.element.id) { i, p in
-                        if i > 0 { Divider() }
-                        NavigationLink {
-                            HoldingDetailView(position: p,
-                                              name: catalog.name(for: p.assetID),
-                                              imageURL: catalog.imageURL(for: p.assetID),
-                                              coinID: catalog.coinID(for: p.assetID),
-                                              alerts: alerts,
-                                              store: store)
-                        } label: {
-                            HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID),
-                                       stakedWith: StakedDelegates.delegates(symbol: p.assetID, accounts: store.heldAccounts(assetID: p.assetID)))
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                store.removeAsset(p.assetID, liability: p.isLiability)
+        let positions = SmallBalanceFilter.split(s.positions, policy: smallBalancePolicy) { $0.marketValueUSD }
+        let cashIsSmall = s.cashUSD > 0 && smallBalancePolicy.isUnderThreshold(s.cashUSD)
+        let showCash = s.cashUSD > 0 && (!cashIsSmall || !smallBalancePolicy.hidesRows)
+        let hiddenCount = positions.hiddenCount + (cashIsSmall ? 1 : 0)
+        let listed = positions.visible
+        return Card(title: "Holdings", systemImage: "circle.grid.2x2", trailing: {
+            holdingsFilterMenu
+        }) {
+            VStack(alignment: .leading, spacing: 8) {
+                if smallBalancePreset == .custom {
+                    customCutoffField
+                }
+                if listed.isEmpty && !showCash {
+                    if hiddenCount == 0 {
+                        Text("No open positions yet. Tap ")
+                            + Text(Image(systemName: "plus.circle.fill")).foregroundColor(Theme.amber)
+                            + Text(" to add one.")
+                    } else {
+                        Text("Every holding is under the cutoff.")
+                            .font(.editorial())
+                            .foregroundStyle(Theme.inkSecondary)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(listed.enumerated()), id: \.element.id) { i, p in
+                            if i > 0 { Hairline() }
+                            NavigationLink {
+                                HoldingDetailView(position: p,
+                                                  name: catalog.name(for: p.assetID),
+                                                  imageURL: catalog.imageURL(for: p.assetID),
+                                                  coinID: catalog.coinID(for: p.assetID),
+                                                  alerts: alerts,
+                                                  store: store)
                             } label: {
-                                Label("Remove \(p.assetID)", systemImage: "trash")
+                                HoldingRow(position: p, imageURL: catalog.imageURL(for: p.assetID),
+                                           stakedWith: StakedDelegates.delegates(symbol: p.assetID, accounts: store.heldAccounts(assetID: p.assetID)))
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    store.removeAsset(p.assetID, liability: p.isLiability)
+                                } label: {
+                                    Label("Remove \(p.assetID)", systemImage: "trash")
+                                }
                             }
                         }
+                        if showCash {
+                            if !listed.isEmpty { Hairline() }
+                            cashRow(s.cashUSD)
+                        }
                     }
-                    if s.cashUSD > 0 {
-                        Divider()
-                        cashRow(s.cashUSD)
-                    }
+                }
+                if let cutoff = smallBalancePolicy.configuredThresholdUSD {
+                    hiddenBalancesRow(count: hiddenCount, threshold: cutoff)
                 }
             }
         }
+    }
+
+    /// Presets live on the card. The same keys drive Settings, so either place sticks.
+    private var holdingsFilterMenu: some View {
+        Menu {
+            Picker("Small balances", selection: $smallBalancePreset) {
+                ForEach(SmallBalancePreset.allCases) { preset in
+                    Text(preset.menuTitle).tag(preset)
+                }
+            }
+        } label: {
+            Image(systemName: smallBalancePolicy.hidesRows
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+                .font(.body)
+                .foregroundStyle(smallBalancePolicy.configuredThresholdUSD == nil ? Theme.inkSecondary : Theme.amber)
+        }
+        .accessibilityLabel(smallBalancePreset == .off ? "Small balances, off" : smallBalancePreset.menuTitle)
+    }
+
+    private var customCutoffField: some View {
+        HStack(spacing: 8) {
+            Text("Hide under")
+                .font(.caption)
+                .foregroundStyle(Theme.inkSecondary)
+            TextField("Amount", text: $smallBalanceCustom)
+                #if os(iOS)
+                .keyboardType(.decimalPad)
+                #endif
+                .font(.figure(15, .medium))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 120)
+            Text("USD")
+                .font(.caption)
+                .foregroundStyle(Theme.inkSecondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Custom cutoff in US dollars")
+    }
+
+    private func hiddenBalancesRow(count: Int, threshold: Decimal) -> some View {
+        let title = SmallBalancePolicy.statusLine(
+            hiddenCount: count,
+            threshold: threshold,
+            showingAll: smallBalanceShowingAll
+        )
+        return Button {
+            guard count > 0 else { return }
+            smallBalanceShowingAll.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: smallBalanceShowingAll ? "eye" : "eye.slash")
+                    .font(.caption)
+                    .foregroundStyle(Theme.amber)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(Theme.inkSecondary)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
+                if count > 0 {
+                    Text(smallBalanceShowingAll ? "Hide" : "Show all")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.amber)
+                }
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)
+        .accessibilityLabel(count > 0
+            ? "\(title). \(smallBalanceShowingAll ? "Hide them again" : "Show all")"
+            : title)
     }
 
     private func cashRow(_ cash: Decimal) -> some View {
@@ -274,18 +420,22 @@ struct NetWorthView: View {
             AssetBadge(symbol: "USD")
             Text("Cash").fontWeight(.medium)
             Spacer()
-            Text(cash, format: .currency(code: "USD"))
-                .monospacedDigit().fontWeight(.medium)
+            Text(USDFormat.display(cash))
+                .font(.figure(16, .medium))
+                .monospacedDigit()
+                .foregroundStyle(Theme.ink)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Cash, \(USDFormat.exact(cash))")
     }
 
     private func realizedCard(_ s: PortfolioSnapshot) -> some View {
         Card(title: "Realized gains", systemImage: "chart.line.uptrend.xyaxis") {
             stat("Short term", s.realizedShortTermUSD)
-            Divider()
+            Hairline()
             stat("Long term", s.realizedLongTermUSD)
-            Divider()
+            Hairline()
             Picker("Cost basis", selection: $store.method) {
                 ForEach(CostBasisMethod.allCases, id: \.self) { m in
                     Text(m.displayName).tag(m)
@@ -346,11 +496,11 @@ struct NetWorthView: View {
                         .foregroundStyle(Theme.amber)
                         .padding(.top, 8)
                     Text("Track your crypto net worth")
-                        .font(.title2.weight(.bold))
+                        .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
-                    Text("Start with what you have. Pick the way that's easiest — you can always add more later.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text("Start with what you have. Pick the way that is easiest. You can add more later.")
+                        .font(.editorial(16))
+                        .foregroundStyle(Theme.inkSecondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 8)
@@ -379,6 +529,8 @@ struct NetWorthView: View {
                     pendingAsset = coin.symbol
                     showingBalance = true
                 }
+
+                MarketCycleCard()
 
                 Text("Everything stays on your device.")
                     .font(.caption2)
@@ -463,6 +615,9 @@ private struct HeroCard: View {
     let points: [NetWorthPoint]
 
     @State private var scrubbed: NetWorthPoint?
+    /// Grows with Dynamic Type, then the line shrinks rather than wrapping the total.
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 40
+    @ScaledMetric(relativeTo: .body) private var deltaSize: CGFloat = 15
 
     private var currentValue: Double {
         scrubbed?.value ?? (snapshot.netWorthUSD as NSDecimalNumber).doubleValue
@@ -482,7 +637,10 @@ private struct HeroCard: View {
             HStack {
                 HStack(spacing: 6) {
                     Circle().fill(Theme.amber).frame(width: 7, height: 7)
-                    Text("NET WORTH").font(.rubric()).tracking(0.8)
+                        .accessibilityHidden(true)
+                    Text("NET WORTH")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(0.8)
                         .foregroundStyle(Theme.inkSecondary)
                 }
                 Spacer()
@@ -491,14 +649,19 @@ private struct HeroCard: View {
             }
 
             // The figure — neutral Ink, never colored; a dagger if we exclude anything.
+            // Exact dollars, not a compact abbreviation: this is the number people trust.
             HStack(alignment: .top, spacing: 1) {
                 Text(currentValue, format: .currency(code: "USD"))
-                    .font(.figure(42, .medium)).monospacedDigit()
+                    .font(.figure(heroSize, .medium)).monospacedDigit()
                     .contentTransition(.numericText())
                     .foregroundStyle(Theme.ink)
                     .minimumScaleFactor(0.5).lineLimit(1)
+                    .dynamicTypeSize(.xSmall ... .accessibility2)
                 if unpricedCount > 0 {
-                    Text("†").font(.figure(18)).foregroundStyle(Theme.amber)
+                    Text("†")
+                        .font(.figure(18))
+                        .foregroundStyle(Theme.amber)
+                        .accessibilityLabel("Excludes unpriced assets")
                 }
             }
 
@@ -520,16 +683,19 @@ private struct HeroCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: up ? "chevron.up" : "chevron.down")
                             .font(.system(size: 11, weight: .bold))
-                        Text(abs(delta), format: .currency(code: "USD")).monospacedDigit()
+                            .accessibilityHidden(true)
+                        Text(USDFormat.display(abs(delta))).monospacedDigit()
                         Text("\(up ? "+" : "-")\(abs(pct), format: .number.precision(.fractionLength(2)))%")
                             .monospacedDigit()
                     }
-                    .font(.figure(15, .medium))
+                    .font(.figure(deltaSize, .medium))
                     .foregroundStyle(up ? Theme.gain : Theme.loss)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(up ? "Up" : "Down") \(abs(delta).formatted(.currency(code: "USD"))), \(abs(pct).formatted(.number.precision(.fractionLength(2)))) percent")
 
                     if let since = points.first?.date {
-                        Text("change in tracked value since \(since, format: .dateTime.day().month(.abbreviated)) — includes holdings you added")
-                            .font(.system(size: 11))
+                        Text("Change in tracked value since \(since, format: .dateTime.day().month(.abbreviated)). Includes holdings you added.")
+                            .font(.caption2)
                             .foregroundStyle(Theme.inkSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -550,6 +716,7 @@ private struct HeroCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .contain)
     }
 
     // 100%-stacked hairline allocation bar — cash vs crypto.
@@ -585,8 +752,9 @@ private struct HeroCard: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
             Text(label).font(.rubric(10)).tracking(0.5).foregroundStyle(Theme.inkSecondary)
-            Text(value, format: .currency(code: "USD").precision(.fractionLength(0)))
+            Text(USDFormat.display(value, fractionDigits: 0...0))
                 .font(.figure(12)).monospacedDigit().foregroundStyle(Theme.ink)
+                .accessibilityLabel(value.formatted(.currency(code: "USD")))
         }
     }
 }
@@ -642,21 +810,45 @@ private struct HoldingRow: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 if let value = position.marketValueUSD {
-                    Text(position.isLiability ? -value : value, format: .currency(code: "USD"))
-                        .monospacedDigit().fontWeight(.medium)
+                    Text(USDFormat.display(position.isLiability ? -value : value))
+                        .font(.figure(16, .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.ink)
                 } else {
                     Text("No price").foregroundStyle(.secondary)
                 }
                 if let unrealized = position.unrealizedUSD {
-                    Text(unrealized, format: .currency(code: "USD"))
+                    Text(USDFormat.display(unrealized))
                         .font(.caption).monospacedDigit()
                         .foregroundStyle(unrealized >= 0 ? Theme.gain : Theme.loss)
                 }
             }
             Image(systemName: "chevron.right")
                 .font(.caption2).foregroundStyle(.tertiary).padding(.leading, 1)
+                .accessibilityHidden(true)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(position.isLiability ? "Debt. Opens details." : "Opens details.")
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [position.assetID, position.qty.formatted(.number.precision(.significantDigits(1...8)))]
+        if position.isLiability { parts.append("debt") }
+        if let value = position.marketValueUSD {
+            parts.append(USDFormat.exact(position.isLiability ? -value : value))
+        } else {
+            parts.append("no price")
+        }
+        if let unrealized = position.unrealizedUSD {
+            let word = unrealized >= 0 ? "unrealized gain" : "unrealized loss"
+            parts.append("\(word) \(USDFormat.exact(abs(unrealized)))")
+        }
+        if let hf = position.healthFactor {
+            parts.append("health \(hf.formatted(.number.precision(.fractionLength(2))))")
+        }
+        return parts.joined(separator: ", ")
     }
     static func compact(_ q: Decimal) -> String {
         q.formatted(.number.notation(.compactName).precision(.significantDigits(1...4)))
@@ -668,15 +860,36 @@ private struct HoldingRow: View {
 struct Card<Content: View>: View {
     let title: String
     var systemImage: String?
-    @ViewBuilder let content: Content
+    private let trailing: AnyView?
+    private let content: Content
+
+    init(title: String, systemImage: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.trailing = nil
+        self.content = content()
+    }
+
+    init<Trailing: View>(title: String, systemImage: String? = nil, @ViewBuilder trailing: () -> Trailing, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.trailing = AnyView(trailing())
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 if let systemImage {
-                    Image(systemName: systemImage).foregroundStyle(Theme.amber)
+                    Image(systemName: systemImage)
+                        .foregroundStyle(Theme.amber)
+                        .accessibilityHidden(true)
                 }
                 Text(title).font(.headline).foregroundStyle(Theme.ink)
+                if let trailing {
+                    Spacer(minLength: 8)
+                    trailing
+                }
             }
             content
         }

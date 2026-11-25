@@ -18,7 +18,7 @@ struct MarketsCard: View {
             if !coins.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(coins.enumerated()), id: \.element.id) { i, coin in
-                        if i > 0 { Divider() }
+                        if i > 0 { Hairline() }
                         row(coin)
                     }
                 }
@@ -63,6 +63,8 @@ struct MarketsCard: View {
             .padding(.vertical, 10)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(coin.name), \(coin.symbol), \(coin.priceUSD.formatted(PriceFormat.usd(coin.priceUSD)))")
+        .accessibilityHint("Adds this coin as a holding")
     }
 
     /// Prices failed to load. Say so, and offer the retry — never render this as

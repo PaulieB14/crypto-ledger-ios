@@ -41,6 +41,12 @@ enum Theme {
     static let tickFlash    = Color(light: 0xF6E7C8, dark: 0x241C0C)  // cell wash on a refresh settle
 }
 
+struct Hairline: View {
+    var body: some View {
+        Rectangle().fill(Theme.hairline).frame(height: 1)
+    }
+}
+
 extension Font {
     /// Tabular monospaced figures — the ledger texture. Always pair with
     /// `.monospacedDigit()` at the call site for live-value transitions.

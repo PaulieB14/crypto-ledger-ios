@@ -21,6 +21,8 @@ import UniformTypeIdentifiers
 /// "inside a long explainer, below the fold" is a weak reading of reachable.
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance: Appearance = .system
+    @AppStorage(SmallBalancePolicy.presetKey) private var smallBalancePreset: SmallBalancePreset = .off
+    @AppStorage(SmallBalancePolicy.customKey) private var smallBalanceCustom = ""
     @Environment(\.dismiss) private var dismiss
 
     /// Wipes every holding and transaction. Lives here rather than in the "+"
@@ -64,7 +66,33 @@ struct SettingsView: View {
                     Text("System follows your device setting.")
                 }
 
+                Section {
+                    Picker("Hide balances under", selection: $smallBalancePreset) {
+                        ForEach(SmallBalancePreset.allCases) { preset in
+                            Text(preset.menuTitle).tag(preset)
+                        }
+                    }
+                    if smallBalancePreset == .custom {
+                        TextField("USD amount", text: $smallBalanceCustom)
+                            #if os(iOS)
+                            .keyboardType(.decimalPad)
+                            #endif
+                    }
+                } header: {
+                    Text("Small balances")
+                } footer: {
+                    Text("Off until you choose a cutoff. Hidden rows stay in your net worth. A holding with no price stays listed.")
+                }
+
                 AppLockSettingsSection()
+
+                Section {
+                    MarketCycleSettingsRow()
+                } header: {
+                    Text("Reference")
+                } footer: {
+                    Text("A free public Bitcoin cycle dashboard. It opens inside Argus and does not receive your holdings.")
+                }
 
                 Section {
                     Link(destination: URL(string: "https://paulieb14.github.io/crypto-ledger-ios/privacy.html")!) {
