@@ -16,6 +16,9 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
+# Simulator screenshot output (Scripts/capture-app-store-screenshots.sh)
+artifacts/
+
 # Swift Package Manager
 .build/
 .swiftpm/

@@ -26,6 +26,9 @@ enum LedgerStore {
     }
 
     static func save(_ entries: [LedgerEntry]) {
+        #if DEBUG
+        if DemoSeed.isEnabled { return }
+        #endif
         guard let url = fileURL, let data = try? LedgerArchive.encode(entries) else { return }
         try? data.write(to: url, options: .atomic)
     }

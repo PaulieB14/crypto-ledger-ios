@@ -23,6 +23,7 @@ struct HoldingDetailView: View {
     @State private var history: [PricePoint] = []
     @State private var loadingHistory = false
     @State private var range: PriceRange = .month
+    @ScaledMetric(relativeTo: .title) private var spotSize: CGFloat = 30
 
     /// Windows offered under the price chart. CoinGecko returns hourly points
     /// for all three of these, not daily — see chartPoints, which thins them.
@@ -105,8 +106,11 @@ struct HoldingDetailView: View {
             }
             if let price = position.spotUSD {
                 Text(price, format: PriceFormat.usd(price))
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.figure(spotSize, .medium))
                     .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .accessibilityLabel("Price \(price.formatted(PriceFormat.usd(price))) per \(position.assetID)")
                 Text("per \(position.assetID)").font(.caption).foregroundStyle(.secondary)
             }
         }

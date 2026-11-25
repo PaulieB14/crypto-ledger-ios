@@ -129,7 +129,7 @@ struct NetWorthChart: View {
             }
         }
         .accessibilityLabel("Net worth over time")
-        .accessibilityValue(points.last.map { "\(Int($0.value)) dollars" } ?? "")
+        .accessibilityValue(points.last.map { $0.value.formatted(.currency(code: "USD")) } ?? "No history")
     }
 
     private func readout(_ p: NetWorthPoint) -> some View {

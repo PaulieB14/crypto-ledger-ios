@@ -40,6 +40,14 @@ jobs:
       - name: Staking ABI decoding
         run: cd Tests/StakingABI && swift run
 
+      - name: Small balance filter
+        # Pure Foundation checks for the holdings-list cutoff. Same reason as
+        # the locale test: it has to run without a full Xcode test target.
+        run: cd Tests/SmallBalance && swift run
+
+      - name: Review prompt policy
+        run: cd Tests/ReviewPrompt && swift run
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

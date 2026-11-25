@@ -34,6 +34,8 @@ struct HelpView: View {
                         bullet("Realized gains", "Locked-in profit from coins you've actually sold. "
                                + "Switch cost-basis method (FIFO/LIFO/HIFO) to see how it changes.")
                         bullet("Remove a holding", "Press and hold any coin, then tap Remove.")
+                        bullet("Small balances", "From the filter on Holdings, or in Settings, hide coins worth less than $1, $10, $100, or an amount you set. Your net worth still includes them. Tap the line under the list to show them again.")
+                        bullet("Market Cycle", "Opens a free public Bitcoin cycle dashboard inside the app. It is separate from your portfolio, and Argus does not send your holdings to it.")
                     }
 
                     section("Your privacy") {

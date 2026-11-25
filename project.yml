@@ -41,6 +41,8 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Same paper as Theme.paper, light and dark, so launch doesn't flash white.
+        INFOPLIST_KEY_UILaunchScreen_UIColorName: LaunchBackground
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         # CoinGecko demo key. Empty by default so a plain checkout still builds

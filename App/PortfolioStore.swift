@@ -116,6 +116,21 @@ final class PortfolioStore {
             state = .failed(initialError)
             return
         }
+        #if DEBUG
+        // In memory only. prepareLaunchState already required the launch argument,
+        // and the saves below refuse to touch the on-device files.
+        if DemoSeed.isEnabled {
+            state = .loading
+            spot = DemoSeed.spots
+            manualEntries = DemoSeed.entries()
+            manualCount = manualEntries.count
+            sourceEntries = []
+            history = DemoSeed.history(endingAt: DemoSeed.illustrativeNetWorth)
+            recompute()
+            state = .loaded
+            return
+        }
+        #endif
         state = .loading
         spot = initialSpot
         history = SnapshotStore.load()

@@ -11,6 +11,13 @@ struct CryptoLedgerApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
 
+    init() {
+        #if DEBUG
+        // Screenshot launches only. Release builds compile this call out.
+        DemoSeed.prepareLaunchState()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             AppLockGate {
